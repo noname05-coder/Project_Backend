@@ -28,7 +28,7 @@ async function getData(){
             githubUrl : "https://github.com/punyajain1/Intelliguide"
         },{
             headers: {
-                "authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI4YWY3MWExMS1kNGNiLTQwYzUtYWQ2NC03ZWJhMDczMTNiMTIiLCJpYXQiOjE3NDczMDg2NzQsImV4cCI6MTc0NzM5NTA3NH0.j6ElQBLGLWilM3UqliNWjgdDhZzWuSPBWXr5t0XFVTM"
+                "authorization": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI4YWY3MWExMS1kNGNiLTQwYzUtYWQ2NC03ZWJhMDczMTNiMTIiLCJpYXQiOjE3NDc4MTEwODEsImV4cCI6MTc0Nzg5NzQ4MX0.ArfE5nuiMO1Rs_6Qna1Q4j7-WlrWVdVMjp9E9WGK9kk"
             }
         });
         console.log("Retrieved repository data successfully");

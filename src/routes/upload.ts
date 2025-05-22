@@ -144,7 +144,7 @@ uploadRouter.post("/live-upload", usermiddleware,async (req, res) => {
     const data = {"markdown": scrapeResponse.markdown, "metadata": scrapeResponse.metadata};
     res.status(200).json({
       message: "Project scraped successfully",
-      siteData: scrapeResponse,
+      siteData: scrapeResponse.markdown,
     });
    
   } catch (err) {
