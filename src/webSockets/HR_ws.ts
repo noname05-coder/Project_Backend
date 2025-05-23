@@ -165,39 +165,30 @@ wss.on("connection",async function (socket, req) {
     const hrInterviewerPrompt = ChatPromptTemplate.fromMessages([
       [
         "system",
-        `You are an experienced HR professional conducting interviews for technical candidates. When the user provides background information (such as a resume, project experience, or role interest), act as a real HR interviewer assessing soft skills, culture fit, and behavioral traits.
-    Your goal is to evaluate the candidate across the following dimensions:
+        `You are an experienced HR professional conducting interviews for technical candidates. Your role is to conduct a natural, flowing conversation while evaluating the candidate.
 
-    Communication Skills: Ask questions that help assess clarity, articulation, listening ability, and logical flow of thoughts.
+        Key Guidelines:
+        - Ask only ONE question at a time
+        - Wait for the candidate's response before asking the next question
+        - Never provide multiple questions or summaries in a single response
+        - Maintain a warm, professional tone
+        - Respond naturally to the candidate's previous answer before transitioning to your next question
+        - Do not reveal your evaluation criteria
+        - Do not provide summaries of the conversation
+        - Stay focused on behavioral and situational questions
 
-    Confidence & Attitude: Gauge how the candidate presents themselves, handles questions under pressure, and maintains a positive tone.
+        Topics to cover throughout the interview:
+        - Communication skills
+        - Team collaboration
+        - Problem-solving approach
+        - Adaptability
+        - Cultural fit
+        - Leadership potential
+        - Conflict resolution
+        - Career motivation
 
-    Cultural Fit: Understand if the candidate aligns with company values, teamwork culture, and work ethics.
-
-    Teamwork & Collaboration: Ask about past team experiences, how they handled conflict, and their collaboration style.
-
-    Adaptability & Learning Ability: Probe how they respond to change, learn new skills, and deal with feedback or uncertainty.
-
-    Motivation & Passion: Understand their drive for this role, their interest in the company or field, and their long-term goals.
-
-    Integrity & Professionalism: Subtly evaluate honesty, responsibility, and ethical behavior through scenario-based or reflective questions.
-
-    Problem Ownership & Initiative: Ask how they've taken ownership or led efforts in past situations.
-
-    Situational Judgement: Use scenario-based questions to see how they respond to common workplace situations (e.g., missing deadlines, team conflict, receiving feedback).
-
-    Your role is to behave exactly like a real HR interviewer:
-      - Be warm and conversational, like a human interviewer.
-      - Start with a short friendly introduction about how the interview will proceed.
-      - Do **not** explain what you're evaluating.
-      - Ask **one clear question at a time**, no multipart questions.
-      - Do **not** summarize candidate answers beyond a line or two.
-      - Ask a natural **follow-up question** after each answer or smoothly transition to the **next topic**.
-      - Do not use markdown formatting, code blocks, or commentary.
-      - Use the type of questions from the sample Question and Answer only
-    
-      Here are the sample Question and Answers : {sampleQA}
-      Here is the candidate context: {candidate_context}`,
+        Here are the sample Question and Answers: {sampleQA}
+        Here is the candidate context: {candidate_context}`,
     
       ],
       new MessagesPlaceholder("chat_history"),
@@ -225,17 +216,22 @@ wss.on("connection",async function (socket, req) {
 
     try {
       console.log("AI Interviewer is preparing the first question...");
-      const response = await chain2.invoke({
+      let response = await chain2.invoke({
         input: "Please start the interview with your first question.",
         candidate_context: JSON.stringify(role_data),
-        sampleQA : JSON.stringify( sampleQAData , null , 2),
+        sampleQA: JSON.stringify(sampleQAData, null, 2),
       });
-      //sending on socket
+      
       socket.send(`\nInterviewer: ${response.output}\n`);
-
-      userInput = await getUserInput(socket);
+      
+      // Store the first question in chat history
+      chatHistory.push({
+        interviewer: String(response.output),
+        candidate: "",
+      });
 
       while(continueInterview) {
+        userInput = await getUserInput(socket);
 
         if (userInput.toLowerCase() === "exit") {
           console.log("\nExiting interview session...");
@@ -245,32 +241,31 @@ wss.on("connection",async function (socket, req) {
           );
           socket.send(`\nInterview Summary: ${response}\n`);
           wss.close();
+          socket.close();
           return;
         }
         
-        chatHistory.push({
-          interviewer: String(response.output),
-          candidate: userInput,
-        });
-        try{
+        // Update the last chat history entry with the candidate's response
+        chatHistory[chatHistory.length - 1].candidate = userInput;
+        
+        try {
           console.log("AI Interviewer is evaluating your response...");
-          const followUpResponse = await chain2.invoke({
+          response = await chain2.invoke({
             input: userInput,
             candidate_context: JSON.stringify(role_data),
             sampleQA: JSON.stringify(sampleQAData, null, 2),
           });
           
-          socket.send(`\nInterviewer: ${followUpResponse.output}\n`);
+          socket.send(`\nInterviewer: ${response.output}\n`);
           
+          // Add the new interviewer question to chat history
           chatHistory.push({
-            interviewer: String(followUpResponse.output),
+            interviewer: String(response.output),
             candidate: "",
           });
         } catch (error) {
           console.error("Error during interview:", error);
         }
-
-        userInput = await getUserInput(socket);
       }
 
     } catch (error) {
