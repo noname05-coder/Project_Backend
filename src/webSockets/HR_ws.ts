@@ -3,20 +3,17 @@ import {
   ChatPromptTemplate,
   MessagesPlaceholder,
 } from "@langchain/core/prompts";
-
-import { ChatOpenAI } from "@langchain/openai";
 import { ConversationSummaryMemory } from "langchain/memory";
 import * as readline from "readline";
-import axios from "axios";
 import dotenv from "dotenv";
 import FirecrawlApp from "@mendable/firecrawl-js";
 import { ConversationChain } from "langchain/chains";
-import say from "say";
+import { PrismaClient } from "@prisma/client";
 
 import { ChatPerplexity } from "@langchain/community/chat_models/perplexity";
 
 dotenv.config();
-const app = new FirecrawlApp({ apiKey: process.env["FIRECRAWL_API_KEY"] });
+const prisma = new PrismaClient();
 
 
 const llm = new ChatPerplexity({
@@ -107,26 +104,38 @@ const wss = new WebSocketServer({ port: 5000 });
 
 
 //websocket server--------------------------------------
-wss.on("connection",async function (socket) {
+wss.on("connection",async function (socket, req) {
+    // Parse sessionId from query string
+    const url = new URL(req.url || '', 'http://localhost');
+    console.log(url);
+    const sessionId = url.searchParams.get('sessionId');
   
     let role_data: IntervieweeData = {
-      name: "Aditi Sharma",
-      role: "Machine Learning Engineer",
-      experience:
-        "2.5 years at a product-based startup working on image classification and NLP projects",
-      company_applying: "Meta",
-      job_description:
-        "Meta is looking for a Machine Learning Engineer with experience in deep learning, computer vision, and NLP. The candidate should have a strong understanding of algorithms and data structures, as well as experience with TensorFlow or PyTorch.",
+      name: "",
+      role: "",
+      experience: "",
+      company_applying: "",
+      job_description: ""
     };
 
-    // try {
-    //   role_data = await getData();
-    //   console.log("Role data retrieved successfully");
-    // } catch (error) {
-    //   console.error("Failed to fetch role data:", error);
-    //   rl.close();
-    //   return;
-    // };
+    const hr_interview = await prisma.hR_Interview.findUnique({
+      where: {
+        session: sessionId || ""
+      }
+    });
+    if(hr_interview){
+      role_data = {
+        name: hr_interview.name,
+        role: hr_interview.role,
+        experience: hr_interview.experience,
+        company_applying: hr_interview.company_applying,
+        job_description: hr_interview.job_description
+    }}
+    await prisma.hR_Interview.delete({
+      where: {
+        session: sessionId || ""
+      }
+    })
 
     const hrInterviewerPrompt = ChatPromptTemplate.fromMessages([
       [
@@ -242,7 +251,7 @@ function getUserInput(socket: any): Promise<string> {
           role_data
         );
         socket.send(`\nInterview Summary: ${response}\n`);
-        break;
+        return;
       }
 
       try {

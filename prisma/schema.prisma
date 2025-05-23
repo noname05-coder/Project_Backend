@@ -32,6 +32,27 @@ model User {
   // technicalReports Technical_report[]
   // mlReports    ML_interview[]
 }
+model HR_Interview{
+  id String @id @default(uuid())
+  session String @unique
+  name String
+  role String
+  experience String
+  company_applying String
+  job_description String
+
+}
+
+model Upload_data{
+  id String @id @default(uuid())
+  session String @unique
+  
+}
+
+
+
+
+
 
 // model HR_report{
 //   id                      String   @id @default(uuid())
