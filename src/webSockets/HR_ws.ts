@@ -122,14 +122,11 @@ async function generate_summery(
 }
 
 const wss = new WebSocketServer({ port: 5000 });
-
-
-
-
-
+const INTERVIEW_DURATION_MINUTES = 10; // Configurable interview duration
+const WARNING_BEFORE_END_MINUTES = 3;
 
 //websocket server--------------------------------------
-wss.on("connection",async function (socket, req) {
+wss.on("connection", async function (socket, req) {
     // Parse sessionId from query string
     const url = new URL(req.url || '', 'http://localhost');
     console.log(url);
@@ -230,7 +227,30 @@ wss.on("connection",async function (socket, req) {
         candidate: "",
       });
 
+      const startTime = Date.now();
+      const endTime = startTime + (INTERVIEW_DURATION_MINUTES * 60 * 1000);
+      const warningTime = endTime - (WARNING_BEFORE_END_MINUTES * 60 * 1000);
+      let isWarningSent = false;
+      let isEnding = false;
+
       while(continueInterview) {
+        const currentTime = Date.now();
+        
+        // Check if interview should end
+        if (currentTime >= endTime) {
+            const summary = await generate_summery(chatHistory, role_data);
+            socket.send(`\nInterview time is up! Thank you for participating.\n\nInterview Summary: ${summary}\n`);
+            socket.close();
+            return;
+        }
+
+        // Send warning when approaching end time
+        if (!isWarningSent && currentTime >= warningTime) {
+            socket.send(`\nNote: ${WARNING_BEFORE_END_MINUTES} minutes remaining in the interview.\n`);
+            isWarningSent = true;
+            isEnding = true;
+        }
+
         userInput = await getUserInput(socket);
 
         if (userInput.toLowerCase() === "exit") {
@@ -240,7 +260,6 @@ wss.on("connection",async function (socket, req) {
             role_data
           );
           socket.send(`\nInterview Summary: ${response}\n`);
-          wss.close();
           socket.close();
           return;
         }
@@ -250,19 +269,36 @@ wss.on("connection",async function (socket, req) {
         
         try {
           console.log("AI Interviewer is evaluating your response...");
-          response = await chain2.invoke({
-            input: userInput,
-            candidate_context: JSON.stringify(role_data),
-            sampleQA: JSON.stringify(sampleQAData, null, 2),
-          });
           
-          socket.send(`\nInterviewer: ${response.output}\n`);
-          
-          // Add the new interviewer question to chat history
-          chatHistory.push({
-            interviewer: String(response.output),
-            candidate: "",
-          });
+          // If we're in the ending period, modify the prompt to wrap up
+          if (isEnding) {
+            response = await chain2.invoke({
+                input: userInput + " [Please wrap up the interview with a final thank you message, no more questions.]",
+                candidate_context: JSON.stringify(role_data),
+                sampleQA: JSON.stringify(sampleQAData, null, 2),
+            });
+            
+            // After sending the final message, generate summary and end
+            socket.send(`\nInterviewer: ${response.output}\n`);
+            const summary = await generate_summery(chatHistory, role_data);
+            socket.send(`\nInterview Summary: ${summary}\n`);
+            socket.close();
+            return;
+          } else {
+            response = await chain2.invoke({
+                input: userInput,
+                candidate_context: JSON.stringify(role_data),
+                sampleQA: JSON.stringify(sampleQAData, null, 2),
+            });
+            
+            socket.send(`\nInterviewer: ${response.output}\n`);
+            
+            // Add the new interviewer question to chat history
+            chatHistory.push({
+              interviewer: String(response.output),
+              candidate: "",
+            });
+          }
         } catch (error) {
           console.error("Error during interview:", error);
         }
