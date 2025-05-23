@@ -3,9 +3,9 @@ import { Router } from "express";
 export const hr_data = Router();
 
 
-hr_data.get("/hr_data" , async(req,res)=>{
+hr_data.post("/hr_data" , async(req,res)=>{
     try{
-        const { name, role, experience, company_applying, job_description } = req.query;
+        const { name, role, experience, company_applying, job_description } = req.body;
 
         // Validate the input
         if (!name || !role || !experience || !company_applying || !job_description) {

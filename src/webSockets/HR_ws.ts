@@ -28,16 +28,6 @@ const llm = new ChatPerplexity({
   apiKey: process.env.PERPLEXITY_API_KEY
 });
 
-
-// const llm2 = new ChatOpenAI({
-//   model: "gpt-4o",
-//   openAIApiKey: process.env.OPENAI_API_KEY,
-//   temperature: 0.7,
-//   topP: 0.85,
-//   frequencyPenalty: 0.2,
-//   presencePenalty: 0.7,
-// });
-
 interface IntervieweeData {
   name: string;
   role: string;
@@ -119,10 +109,6 @@ const wss = new WebSocketServer({ port: 5000 });
 //websocket server--------------------------------------
 wss.on("connection",async function (socket) {
   
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-    });
     let role_data: IntervieweeData = {
       name: "Aditi Sharma",
       role: "Machine Learning Engineer",
@@ -218,7 +204,6 @@ function getUserInput(socket: any): Promise<string> {
           role_data
         );
         socket.send(`\nInterview Summary: ${response}\n`);
-        rl.close();
         return;
       }
 
@@ -244,7 +229,6 @@ function getUserInput(socket: any): Promise<string> {
       }
     } catch (error) {
       console.error("Error starting interview:", error);
-      rl.close();
       return;
     }
 
@@ -258,7 +242,6 @@ function getUserInput(socket: any): Promise<string> {
           role_data
         );
         socket.send(`\nInterview Summary: ${response}\n`);
-        rl.close();
         break;
       }
 

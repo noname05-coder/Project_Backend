@@ -16,7 +16,7 @@
     "@langchain/core": "^0.3.56",
     "@langchain/openai": "^0.5.10",
     "@mendable/firecrawl-js": "^1.21.1",
-    "@prisma/client": "^6.7.0",
+    "@prisma/client": "^6.8.2",
     "@types/axios": "^0.9.36",
     "@types/bcrypt": "^5.0.2",
     "@types/express": "^5.0.1",
@@ -38,7 +38,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.15.17",
-    "prisma": "^6.7.0",
+    "prisma": "^6.8.2",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"
   },
