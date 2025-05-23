@@ -12,6 +12,31 @@ import { PrismaClient } from "@prisma/client";
 
 import { ChatPerplexity } from "@langchain/community/chat_models/perplexity";
 
+import * as fs from 'fs/promises';
+import * as path from 'path';
+
+async function loadSampleQA() {
+  try {
+    const filePath = path.join(__dirname, '../../data/sample_qa.txt');
+    const content = await fs.readFile(filePath, 'utf-8');
+    
+    // Parse the content into Q&A pairs
+    const qaPairs = content.split('\n\n').map(pair => {
+      const [question, answer] = pair.split('\nA: ');
+      return {
+        question: question.replace('Q: ', '').trim(),
+        expectedAnswer: answer.trim()
+      };
+    });
+    
+    return qaPairs;
+  } catch (error) {
+    console.error('Error loading sample Q&A:', error);
+    return [];
+  }
+}
+
+
 dotenv.config();
 const prisma = new PrismaClient();
 
@@ -168,10 +193,12 @@ wss.on("connection",async function (socket, req) {
       - Ask **one clear question at a time**, no multipart questions.
       - Do **not** summarize candidate answers beyond a line or two.
       - Ask a natural **follow-up question** after each answer or smoothly transition to the **next topic**.
-      - Based on the context, ask between 10–12 questions total.
       - Do not use markdown formatting, code blocks, or commentary.
+      - Use the type of questions from the sample Question and Answer only
     
-    Here is the candidate context: {candidate_context}`,
+      Here are the sample Question and Answers : {sampleQA}
+      Here is the candidate context: {candidate_context}`,
+    
       ],
       new MessagesPlaceholder("chat_history"),
       ["human", "{input}"],
@@ -184,91 +211,71 @@ wss.on("connection",async function (socket, req) {
       outputKey: "output",
     });
 
-function getUserInput(socket: any): Promise<string> {
-  return new Promise<string>((resolve) => {
-    socket.on("message", (message: string) => {
-      resolve(message.toString());
-    });
-  });
-}
+    function getUserInput(socket: any): Promise<string> {
+      return new Promise<string>((resolve) => {
+        socket.on("message", (message: string) => {
+          resolve(message.toString());
+        });
+      });
+    }
 
     let continueInterview = true;
     let userInput: string;
+    const sampleQAData = await loadSampleQA();
 
     try {
       console.log("AI Interviewer is preparing the first question...");
       const response = await chain2.invoke({
         input: "Please start the interview with your first question.",
         candidate_context: JSON.stringify(role_data),
+        sampleQA : JSON.stringify( sampleQAData , null , 2),
       });
       //sending on socket
       socket.send(`\nInterviewer: ${response.output}\n`);
 
       userInput = await getUserInput(socket);
 
-      if (userInput.toLowerCase() === "exit") {
-        console.log("\nExiting interview session...");
-        const response = await generate_summery(
-          chatHistory,
-          role_data
-        );
-        socket.send(`\nInterview Summary: ${response}\n`);
-        return;
-      }
+      while(continueInterview) {
 
-      chatHistory.push({
-        interviewer: String(response.output),
-        candidate: userInput,
-      });
-      try{
-        console.log("AI Interviewer is evaluating your response...");
-        const followUpResponse = await chain2.invoke({
-          input: userInput,
-          candidate_context: JSON.stringify(role_data),
-        });
-
-        socket.send(`\nInterviewer: ${followUpResponse.output}\n`);
-
+        if (userInput.toLowerCase() === "exit") {
+          console.log("\nExiting interview session...");
+          const response = await generate_summery(
+            chatHistory,
+            role_data
+          );
+          socket.send(`\nInterview Summary: ${response}\n`);
+          wss.close();
+          return;
+        }
+        
         chatHistory.push({
-          interviewer: String(followUpResponse.output),
-          candidate: "",
+          interviewer: String(response.output),
+          candidate: userInput,
         });
-      } catch (error) {
-        console.error("Error during interview:", error);
+        try{
+          console.log("AI Interviewer is evaluating your response...");
+          const followUpResponse = await chain2.invoke({
+            input: userInput,
+            candidate_context: JSON.stringify(role_data),
+            sampleQA: JSON.stringify(sampleQAData, null, 2),
+          });
+          
+          socket.send(`\nInterviewer: ${followUpResponse.output}\n`);
+          
+          chatHistory.push({
+            interviewer: String(followUpResponse.output),
+            candidate: "",
+          });
+        } catch (error) {
+          console.error("Error during interview:", error);
+        }
+
+        userInput = await getUserInput(socket);
       }
+
     } catch (error) {
       console.error("Error starting interview:", error);
       return;
     }
 
-    while (continueInterview) {
-      userInput = await getUserInput(socket);
-
-      if (userInput.toLowerCase() === "exit") {
-        console.log("\nExiting interview session...");
-        const response = await generate_summery(
-          chatHistory,
-          role_data
-        );
-        socket.send(`\nInterview Summary: ${response}\n`);
-        return;
-      }
-
-      try {
-        console.log("AI HR Interviewer is evaluating your response...");
-        const response = await chain2.invoke({
-          input: userInput,
-          candidate_context: JSON.stringify(role_data),
-        });
-
-        socket.send(`\nInterviewer: ${response.output}\n`);
-
-        chatHistory.push({
-          interviewer: String(response.output),
-          candidate: userInput,
-        });
-      } catch (error) {
-        console.error("Error during interview:", error);
-      }
-    }
 });
