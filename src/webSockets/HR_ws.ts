@@ -302,9 +302,8 @@ export function startHRInterviewWebSocket(sessionId: string, port: number): Prom
                 input: userInput + " [Please wrap up the interview with a final thank you message, no more questions.]",
                 candidate_context: JSON.stringify(role_data),
             });
-            
-            
             socket.send(`\nInterviewer: ${response.output}\n`);
+            socket.send("END");
             const summary = await generate_summery(chatHistory, role_data);
             socket.send(`\nInterview Summary: ${summary}\n`);
             socket.close();
