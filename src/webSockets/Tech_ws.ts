@@ -20,7 +20,8 @@ const llm = new ChatOpenAI({
   presencePenalty: 0.6,
 });
 
-const wss = new WebSocketServer({ port: 6000 });
+// Store active WebSocket servers for each session
+const activeServers = new Map<string, WebSocketServer>();
 
 interface RepositoryData {
   readme: string;
@@ -106,17 +107,38 @@ Here is the interview transcript: ${formattedHistory}`,
   }
 }
 
-wss.on("connection", async function (socket) {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
+export function startTechInterviewWebSocket(sessionId: string, port: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    // Check if server already exists for this session
+    if (activeServers.has(sessionId)) {
+      resolve(`ws://localhost:${port}?sessionId=${sessionId}`);
+      return;
+    }
 
-  // Initialize memory and chat history
-  const memory = new BufferMemory({
-    returnMessages: true,
-    memoryKey: "chat_history",
-  });
+    const wss = new WebSocketServer({ port });
+    activeServers.set(sessionId, wss);
+
+    wss.on("connection", async function (socket, req) {
+      // Parse sessionId from query string
+      const url = new URL(req.url || '', 'http://localhost');
+      const requestSessionId = url.searchParams.get('sessionId');
+      
+      // Validate that the connection is for the correct session
+      if (requestSessionId !== sessionId) {
+          socket.close(1008, 'Invalid session ID');
+          return;
+      }
+
+      const rl = readline.createInterface({
+        input: process.stdin,
+        output: process.stdout,
+      });
+
+      // Initialize memory and chat history
+      const memory = new BufferMemory({
+        returnMessages: true,
+        memoryKey: "chat_history",
+      });
 
   let chatHistory: ChatHistoryEntry[] = [];
   let repositoryData: RepositoryData;
@@ -272,4 +294,60 @@ wss.on("connection", async function (socket) {
       console.error("Error during interview:", error);
     }
   }
-});
+
+  // Handle socket close to cleanup session data
+  socket.on('close', () => {
+    console.log(`Tech Interview session ${sessionId} ended`);
+    rl.close();
+  });
+  });
+
+  wss.on('listening', () => {
+    console.log(`Tech Interview WebSocket server started for session ${sessionId} on port ${port}`);
+    resolve(`ws://localhost:${port}?sessionId=${sessionId}`);
+  });
+
+  wss.on('error', (error) => {
+    console.error(`Tech WebSocket server error for session ${sessionId}:`, error);
+    activeServers.delete(sessionId);
+    reject(error);
+  });
+
+  wss.on('close', () => {
+    console.log(`Tech Interview WebSocket server closed for session ${sessionId}`);
+    activeServers.delete(sessionId);
+  });
+  });
+}
+
+// Function to stop a WebSocket server for a specific session
+export function stopTechInterviewWebSocket(sessionId: string): void {
+  const wss = activeServers.get(sessionId);
+  if (wss) {
+    wss.close();
+    activeServers.delete(sessionId);
+    console.log(`Stopped Tech Interview WebSocket server for session ${sessionId}`);
+  }
+}
+
+// Function to get available port for Tech interview
+export function getTechAvailablePort(): number {
+  const basePort = 6001;
+  let port = basePort;
+  
+  // Find an available port by checking active servers
+  const usedPorts = new Set<number>();
+  for (const [sessionId, server] of activeServers) {
+    const address = server.address();
+    if (address && typeof address === 'object' && 'port' in address) {
+      usedPorts.add(address.port);
+    }
+  }
+  
+  // Find the next available port
+  while (usedPorts.has(port)) {
+    port++;
+  }
+  
+  return port;
+}

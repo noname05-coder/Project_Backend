@@ -3,7 +3,6 @@ import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { OAuth2Client } from 'google-auth-library';
-import axios from 'axios';
 import { usermiddleware } from "../middleware/usermiddleware";
 
 

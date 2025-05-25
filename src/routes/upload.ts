@@ -6,6 +6,8 @@ import { usermiddleware } from '../middleware/usermiddleware'
 import { PrismaClient } from '@prisma/client';
 import FirecrawlApp, { CrawlParams, CrawlStatusResponse } from '@mendable/firecrawl-js';
 
+
+
 const prisma = new PrismaClient();
 
 

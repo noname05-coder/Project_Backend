@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { v4 as uuidv4 } from 'uuid';
 import { PrismaClient } from '@prisma/client';
+import { startHRInterviewWebSocket, getAvailablePort } from '../webSockets/HR_ws';
 
 const prisma = new PrismaClient();
 
@@ -14,6 +15,7 @@ hr_data.post("/hr_data", async (req, res) => {
             return;
         }
         const sessionId = uuidv4();
+        const port = getAvailablePort();
         
         try {
             const hr_interview = await prisma.hR_Interview.create({
@@ -26,31 +28,47 @@ hr_data.post("/hr_data", async (req, res) => {
                     job_description
                 }
             });
-            res.json({ 
-                sessionId, 
-                websocketUrl: `ws://localhost:5000?sessionId=${sessionId}`,
-                data: {
-                    name,
-                    role,
-                    experience,
-                    company_applying,
-                    job_description
-                }
-            });
+
+            // Start WebSocket server for this session
+            try {
+                const websocketUrl = await startHRInterviewWebSocket(sessionId, port);
+                res.json({ 
+                    sessionId, 
+                    websocketUrl,
+                    data: {
+                        name,
+                        role,
+                        experience,
+                        company_applying,
+                        job_description
+                    }
+                });
+            } catch (wsError) {
+                console.error("WebSocket server error:", wsError);
+                res.status(500).json({ error: "Failed to start interview session" });
+            }
         } catch (dbError) {
             console.error("Database error:", dbError);
-            res.json({ 
-                sessionId, 
-                websocketUrl: `ws://localhost:5000?sessionId=${sessionId}`,
-                data: {
-                    name,
-                    role,
-                    experience,
-                    company_applying,
-                    job_description
-                },
-                notice: "Session data not stored in database"
-            });
+            
+            // Even if database fails, try to start WebSocket server
+            try {
+                const websocketUrl = await startHRInterviewWebSocket(sessionId, port);
+                res.json({ 
+                    sessionId, 
+                    websocketUrl,
+                    data: {
+                        name,
+                        role,
+                        experience,
+                        company_applying,
+                        job_description
+                    },
+                    notice: "Session data not stored in database"
+                });
+            } catch (wsError) {
+                console.error("WebSocket server error:", wsError);
+                res.status(500).json({ error: "Failed to start interview session" });
+            }
         }
     } catch (error) {
         console.error("Error in /hr_data route:", error);

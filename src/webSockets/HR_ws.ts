@@ -1,15 +1,9 @@
 import { WebSocketServer } from "ws";
-import {
-  ChatPromptTemplate,
-  MessagesPlaceholder,
-} from "@langchain/core/prompts";
+import {ChatPromptTemplate,MessagesPlaceholder,} from "@langchain/core/prompts";
 import { ConversationSummaryMemory } from "langchain/memory";
-import * as readline from "readline";
 import dotenv from "dotenv";
-import FirecrawlApp from "@mendable/firecrawl-js";
 import { ConversationChain } from "langchain/chains";
 import { PrismaClient } from "@prisma/client";
-
 import { ChatPerplexity } from "@langchain/community/chat_models/perplexity";
 
 import * as fs from 'fs/promises';
@@ -36,10 +30,8 @@ async function loadSampleQA() {
   }
 }
 
-
 dotenv.config();
 const prisma = new PrismaClient();
-
 
 const llm = new ChatPerplexity({
   model: "sonar",
@@ -62,15 +54,12 @@ interface ChatHistoryEntry {
   interviewer: string;
   candidate: string;
 }
-const memory = new ConversationSummaryMemory({
-  memoryKey: "chat_history",
-  inputKey: "input",
-  outputKey: "output",
-  returnMessages: true,
-  llm: llm,
-});
 
-let chatHistory: ChatHistoryEntry[] = [];
+// Store session-specific data
+const sessionData = new Map<string, {
+  memory: ConversationSummaryMemory;
+  chatHistory: ChatHistoryEntry[];
+}>();
 
 async function generate_summery(
   chat_history: ChatHistoryEntry[],
@@ -121,43 +110,85 @@ async function generate_summery(
   }
 }
 
-const wss = new WebSocketServer({ port: 5000 });
-const INTERVIEW_DURATION_MINUTES = 10; // Configurable interview duration
-const WARNING_BEFORE_END_MINUTES = 3;
+const INTERVIEW_DURATION_MINUTES = 5; // Configurable interview duration
+const WARNING_BEFORE_END_MINUTES = 2;
 
-//websocket server--------------------------------------
-wss.on("connection", async function (socket, req) {
-    // Parse sessionId from query string
-    const url = new URL(req.url || '', 'http://localhost');
-    console.log(url);
-    const sessionId = url.searchParams.get('sessionId');
-  
-    let role_data: IntervieweeData = {
-      name: "",
-      role: "",
-      experience: "",
-      company_applying: "",
-      job_description: ""
-    };
+// Store active WebSocket servers for each session
+const activeServers = new Map<string, WebSocketServer>();
 
-    const hr_interview = await prisma.hR_Interview.findUnique({
-      where: {
-        session: sessionId || ""
-      }
-    });
-    if(hr_interview){
-      role_data = {
-        name: hr_interview.name,
-        role: hr_interview.role,
-        experience: hr_interview.experience,
-        company_applying: hr_interview.company_applying,
-        job_description: hr_interview.job_description
-    }}
-    await prisma.hR_Interview.delete({
-      where: {
-        session: sessionId || ""
-      }
-    })
+// Function to create and start a WebSocket server for a specific session
+export function startHRInterviewWebSocket(sessionId: string, port: number): Promise<string> {
+  return new Promise((resolve, reject) => {
+    // Check if server already exists for this session
+    if (activeServers.has(sessionId)) {
+      resolve(`ws://localhost:${port}?sessionId=${sessionId}`);
+      return;
+    }
+
+    const wss = new WebSocketServer({ port });
+    activeServers.set(sessionId, wss);
+
+    wss.on("connection", async function (socket, req) {        // Parse sessionId from query string
+        const url = new URL(req.url || '', 'http://localhost');
+        console.log(url);
+        const requestSessionId = url.searchParams.get('sessionId');
+        
+        // Validate that the connection is for the correct session
+        if (requestSessionId !== sessionId) {
+            socket.close(1008, 'Invalid session ID');
+            return;
+        }
+      
+        let role_data: IntervieweeData = {
+          name: "",
+          role: "",
+          experience: "",
+          company_applying: "",
+          job_description: ""
+        };        // Initialize session-specific data
+        if (!sessionData.has(sessionId)) {
+          const memory = new ConversationSummaryMemory({
+            memoryKey: "chat_history",
+            inputKey: "input",
+            outputKey: "output",
+            returnMessages: true,
+            llm: llm,
+          });
+          
+          sessionData.set(sessionId, {
+            memory,
+            chatHistory: []
+          });
+        }
+        
+        const { memory, chatHistory } = sessionData.get(sessionId)!;
+    
+        const hr_interview = await prisma.hR_Interview.findUnique({
+          where: {
+            session: sessionId || ""
+          }
+        });
+        
+        if(hr_interview){
+          role_data = {
+            name: hr_interview.name,
+            role: hr_interview.role,
+            experience: hr_interview.experience,
+            company_applying: hr_interview.company_applying,
+            job_description: hr_interview.job_description
+          };
+        } else {
+          // If no record found, close the connection
+          socket.close(1008, 'Interview session not found');
+          return;
+        }
+        
+        // Don't delete the record here - keep it for the interview duration
+        // await prisma.hR_Interview.delete({
+        //   where: {
+        //     session: sessionId || ""
+        //   }
+        // })
 
     const hrInterviewerPrompt = ChatPromptTemplate.fromMessages([
       [
@@ -309,4 +340,71 @@ wss.on("connection", async function (socket, req) {
       return;
     }
 
-});
+    // Handle socket close to cleanup session data
+    socket.on('close', () => {
+      console.log(`Interview session ${sessionId} ended, cleaning up session data`);
+      sessionData.delete(sessionId);
+      
+      // Clean up database record when interview session ends
+      prisma.hR_Interview.delete({
+        where: {
+          session: sessionId
+        }
+      }).catch(error => {
+        // Ignore errors if record doesn't exist
+        console.log(`Cleanup: Record for session ${sessionId} was already deleted`);
+      });
+    });
+
+    });
+
+    wss.on('listening', () => {
+      console.log(`HR Interview WebSocket server started for session ${sessionId} on port ${port}`);
+      resolve(`ws://localhost:${port}?sessionId=${sessionId}`);
+    });
+
+    wss.on('error', (error) => {
+      console.error(`WebSocket server error for session ${sessionId}:`, error);
+      activeServers.delete(sessionId);
+      reject(error);
+    });
+
+    wss.on('close', () => {
+      console.log(`HR Interview WebSocket server closed for session ${sessionId}`);
+      activeServers.delete(sessionId);
+    });
+  });
+}
+
+// Function to stop a WebSocket server for a specific session
+export function stopHRInterviewWebSocket(sessionId: string): void {
+  const wss = activeServers.get(sessionId);
+  if (wss) {
+    wss.close();
+    activeServers.delete(sessionId);
+    console.log(`Stopped HR Interview WebSocket server for session ${sessionId}`);
+  }
+}
+
+// Function to get available port for new session
+export function getAvailablePort(): number {
+  const basePort = 5000;
+  let port = basePort;
+  
+  // Find an available port by checking active servers
+  const usedPorts = new Set<number>();
+  for (const [sessionId, server] of activeServers) {
+    // Extract port from server address if available
+    const address = server.address();
+    if (address && typeof address === 'object' && 'port' in address) {
+      usedPorts.add(address.port);
+    }
+  }
+  
+  // Find the next available port
+  while (usedPorts.has(port)) {
+    port++;
+  }
+  
+  return port;
+}
