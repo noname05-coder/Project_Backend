@@ -32,17 +32,7 @@ hr_data.post("/hr_data", async (req, res) => {
             // Start WebSocket server for this session
             try {
                 const websocketUrl = await startHRInterviewWebSocket(sessionId, port);
-                res.json({ 
-                    sessionId, 
-                    websocketUrl,
-                    data: {
-                        name,
-                        role,
-                        experience,
-                        company_applying,
-                        job_description
-                    }
-                });
+                res.json({ websocketUrl});
             } catch (wsError) {
                 console.error("WebSocket server error:", wsError);
                 res.status(500).json({ error: "Failed to start interview session" });
