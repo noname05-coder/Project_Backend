@@ -4,14 +4,15 @@ import path from 'path'
 import fs from 'fs/promises'
 import { usermiddleware } from '../middleware/usermiddleware'
 import { PrismaClient } from '@prisma/client';
-import FirecrawlApp, { CrawlParams, CrawlStatusResponse } from '@mendable/firecrawl-js';
-
-
+import FirecrawlApp from '@mendable/firecrawl-js';
+import { v4 as uuidv4 } from 'uuid';
+import { getTechAvailablePort, startTechInterviewWebSocket} from '../webSockets/Tech_ws'
 
 const prisma = new PrismaClient();
 
 
 const app = new FirecrawlApp({apiKey: process.env["FIRECRAWL_API_KEY"]});
+
 
 // Helper function to find all package.json files in a repository
 async function findPackageJsonFiles(dir: string): Promise<{path: string, content: any}[]> {
@@ -49,19 +50,12 @@ async function findPackageJsonFiles(dir: string): Promise<{path: string, content
   return packageJsonFiles;
 }
 
+
+
 export const uploadRouter = Router();
 
-
-
-uploadRouter.post('/github-upload', usermiddleware,async (req, res) => {
-
-    const user = await prisma.user.findUnique({
-      where: { id: req.userId },
-    });
-    if (!user) {
-    res.status(401).json({ error: 'Unauthorized' });
-    };
-    const { githubUrl } = req.body;
+uploadRouter.post('/github-upload',async (req, res) => {
+  const { githubUrl , description , live_link = null } = req.body;
 
   if (!githubUrl || !githubUrl.includes('github.com')) {
     res.status(400).json({ error: 'Invalid GitHub URL' });
@@ -70,7 +64,6 @@ uploadRouter.post('/github-upload', usermiddleware,async (req, res) => {
 
   try {
     const repoName = githubUrl.split('/').slice(-1)[0];
-
     const tempDir = path.join(__dirname, '../../tmp');
     const tempPath = path.join(tempDir, repoName);
 
@@ -82,22 +75,16 @@ uploadRouter.post('/github-upload', usermiddleware,async (req, res) => {
         else resolve(true);
       });
     });
-
     const readmePath = path.join(tempPath, 'README.md');
     let readme = '';
-
     try {
       readme = await fs.readFile(readmePath, 'utf-8');
     } catch (e) {
       console.log('README.md not found in root directory');
     }
-
     const packageJsonFiles = await findPackageJsonFiles(tempPath);
-    
-    // Clean up
+    //deleting the file
     await fs.rm(tempPath, { recursive: true, force: true });
-
-    console.log(`Found ${packageJsonFiles.length} package.json files`);
 
     const dependencies = [];
     for(let i=packageJsonFiles.length-1; i>=0;i--){
@@ -108,15 +95,52 @@ uploadRouter.post('/github-upload', usermiddleware,async (req, res) => {
         }
       }
     }
+
+    let scrapeResponse = null;
+
+    if(live_link){
+      try{
+        scrapeResponse = await app.scrapeUrl(`${live_link}`, {formats: ['markdown', 'html'],});
+        if (!scrapeResponse.success) {
+          res.status(401).json({msg: "Failed to scrape project", error: scrapeResponse.error });
+          return;
+        }
+      }catch(err){
+        console.error('Error scraping live link:', err);
+        res.status(500).json({ error: 'Failed to scrape live link', details: err });
+        return;
+      }
+    }
+
+    const sessionId = uuidv4(); // Keep this for WebSocket session management
+    const port = getTechAvailablePort();
     
-    res.json({
-      readme,
-      dependencies,
-      message: 'Project parsed successfully',
-    });
-  } catch(err) {
-    console.error('Error in github-upload:', err);
-    res.status(500).json({ error: 'Failed to parse project', details: err });
+
+    try {
+      await prisma.tech_Interview.create({
+        data: {
+          session: sessionId, // Use sessionId instead of repoName
+          description: JSON.stringify(description),
+          readme: readme,
+          dependencies: dependencies.toString(),
+          site_data: scrapeResponse ? scrapeResponse.markdown : null,
+        },
+      });
+      
+      // Start WebSocket server for this session
+      try {
+        const websocketUrl = await startTechInterviewWebSocket(sessionId, port);
+        res.json({ websocketUrl});
+      } catch (wsError) {
+        console.error("WebSocket server error:", wsError);
+        res.status(500).json({ error: "Failed to start interview session" });
+      }
+    } catch (dbError) {
+      console.error("Database error:", dbError);
+    }
+  } catch(error) {
+    console.error("Error in /github-upload route:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -132,18 +156,12 @@ uploadRouter.post("/live-upload", usermiddleware,async (req, res) => {
     return;
   }
   const { projectUrl } = req.body;
-
-  // if (!projectUrl || !projectDescription) {
-  //   res.status(400).json({ error: "Project URL and description are required" });
-  // }
-
   try {
     const scrapeResponse = await app.scrapeUrl(`${projectUrl}`, {formats: ['markdown', 'html'],});
     if (!scrapeResponse.success) {
       res.status(401).json({msg: "Failed to scrape project", error: scrapeResponse.error });
       return;
     };
-    const data = {"markdown": scrapeResponse.markdown, "metadata": scrapeResponse.metadata};
     res.status(200).json({
       message: "Project scraped successfully",
       siteData: scrapeResponse.markdown,

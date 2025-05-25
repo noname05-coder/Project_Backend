@@ -52,3 +52,12 @@ model ML_Interview{
   session String @unique
   description String
 }
+
+model Tech_Interview{
+  id String @id @default(uuid())
+  session String @unique
+  readme String
+  description String
+  dependencies String
+  site_data String? 
+}

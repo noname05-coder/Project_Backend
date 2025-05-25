@@ -1,15 +1,14 @@
 import { WebSocketServer } from "ws";
-import { HumanMessage, AIMessage } from "@langchain/core/messages";
-import {
-  ChatPromptTemplate,
-  MessagesPlaceholder,
-} from "@langchain/core/prompts";
+import {ChatPromptTemplate,MessagesPlaceholder,} from "@langchain/core/prompts";
 import { ChatOpenAI } from "@langchain/openai";
-import { BufferMemory } from "langchain/memory";
-import * as readline from "readline";
+import { ConversationSummaryMemory } from "langchain/memory";
+import { ConversationChain } from "langchain/chains";
+import { PrismaClient } from "@prisma/client";
 import axios from "axios";
 import dotenv from "dotenv";
 dotenv.config();
+
+const prisma = new PrismaClient();
 
 const llm = new ChatOpenAI({
   model: "gpt-4o",
@@ -24,10 +23,24 @@ const llm = new ChatOpenAI({
 const activeServers = new Map<string, WebSocketServer>();
 
 interface RepositoryData {
+  session : string;
   readme: string;
-  dependencies: string[];
-  message?: string;
+  dependencies: string[] | string;
+  site_data?: string | null;
+  description: string;
 }
+
+interface ChatHistoryEntry {
+  interviewer: string;
+  candidate: string;
+}
+
+// Store session-specific data
+const sessionData = new Map<string, {
+  memory: ConversationSummaryMemory;
+  chatHistory: ChatHistoryEntry[];
+  repositoryData: RepositoryData;
+}>();
 
 async function getData() {
   try {
@@ -49,11 +62,6 @@ async function getData() {
     console.error("Failed to fetch repository data:", error);
     throw error;
   }
-}
-
-interface ChatHistoryEntry {
-  interviewer: string;
-  candidate: string;
 }
 
 //generating the summery of the interview
@@ -90,7 +98,7 @@ Ability to scale, optimize, and maintain the system
 
 Problem-solving skills demonstrated through scenario-based or technical questions
 
-Here is the interview transcript: ${formattedHistory}`,
+Here is the interview transcript: {transcript}`,
       ],
     ]);
 
@@ -106,6 +114,9 @@ Here is the interview transcript: ${formattedHistory}`,
     return "Failed to generate summary due to an error.";
   }
 }
+
+const INTERVIEW_DURATION_MINUTES = 10; 
+const WARNING_BEFORE_END_MINUTES = 2;
 
 export function startTechInterviewWebSocket(sessionId: string, port: number): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -129,194 +140,233 @@ export function startTechInterviewWebSocket(sessionId: string, port: number): Pr
           return;
       }
 
-      const rl = readline.createInterface({
-        input: process.stdin,
-        output: process.stdout,
+      // Initialize session-specific data
+      if (!sessionData.has(sessionId)) {
+        const memory = new ConversationSummaryMemory({
+          memoryKey: "chat_history",
+          inputKey: "input",
+          outputKey: "output",
+          returnMessages: true,
+          llm: llm,
+        });
+        
+        let repositoryData: RepositoryData;
+        try {
+          const result = await prisma.tech_Interview.findUnique({where: { session: sessionId },});
+          if (!result) {
+            throw new Error(`No repository data found for session ${sessionId}`);
+          }
+          
+          // Handle dependencies parsing more safely
+          let dependencies: string[];
+          if (typeof result.dependencies === 'string') {
+            try {
+              // Try parsing as JSON first
+              dependencies = JSON.parse(result.dependencies);
+            } catch (parseError) {
+              // If JSON parsing fails, treat it as a comma-separated string
+              dependencies = result.dependencies.split(',').map(dep => dep.trim()).filter(dep => dep.length > 0);
+            }
+          } else {
+            dependencies = result.dependencies || [];
+          }
+          
+          repositoryData = {
+            session: result.session,
+            readme: result.readme,
+            dependencies: dependencies,
+            site_data: result.site_data,
+            description: result.description
+          };
+          console.log("Repository data loaded successfully.\n");
+        }catch(error){
+          console.error("Failed to load repository data:", error);
+          socket.close(1011, 'Failed to load repository data');
+          return;
+        }
+        
+        sessionData.set(sessionId, {
+          memory,
+          chatHistory: [],
+          repositoryData
+        });
+      }
+      
+      const { memory, chatHistory, repositoryData } = sessionData.get(sessionId)!;
+
+      const interviewerPrompt = ChatPromptTemplate.fromMessages([
+        [
+          "system",
+          `You are a seasoned technical interviewer with years of experience in assessing candidates for software engineering roles. Your job is to ask insightful, real-world technical questions based on:
+        
+                    The project description and/or README
+                    Any available data from web scraping related to the project (such as website content, documentation, or public interfaces)
+                    The provided tech stack used in the project
+        
+                    Ask detailed, context-aware interview questions that test the candidate's:
+                    - Understanding of project architecture and design decisions
+                    - Practical knowledge of the specified technologies
+                    - Ability to scale, optimize, and maintain the system
+                    - Problem-solving skills through scenario-based questions relevant to the project
+        
+                    Your questions should mimic those asked in real technical interviews for roles like backend developer, frontend engineer, full-stack developer, or DevOps, depending on the project's context.
+        
+                    Ask as if you're interviewing a candidate for a job that involves working on or maintaining this project in the real world.
+                    
+                    Key Guidelines:
+                    - Ask only ONE question at a time
+                    - Wait for the candidate's response before asking the next question
+                    - Never provide multiple questions or summaries in a single response
+                    - Maintain a professional, technical tone
+                    - Respond naturally to the candidate's previous answer before transitioning to your next question
+                    - Do not reveal your evaluation criteria
+                    - Do not provide summaries of the conversation
+                    - Stay focused on technical questions
+                    - Based on the complexity of project ask between 10-15 questions
+                    - Questions can be mix of any type like coding, design, architecture, system design, etc. and can be mix of any level like easy, medium, hard
+                    
+                    The repository information is: 
+                    readme: ${JSON.stringify(repositoryData.readme)},
+                    dependencies: ${JSON.stringify(repositoryData.dependencies)}`,
+        ],
+        new MessagesPlaceholder("chat_history"),
+        ["human", "{input}"],
+      ]);
+
+      const chain = new ConversationChain({
+        llm: llm,
+        memory: memory,
+        prompt: interviewerPrompt,
+        outputKey: "output",
       });
 
-      // Initialize memory and chat history
-      const memory = new BufferMemory({
-        returnMessages: true,
-        memoryKey: "chat_history",
-      });
+      function getUserInput(socket: any): Promise<string> {
+        return new Promise<string>((resolve) => {
+          socket.on("message", (message: string) => {
+            resolve(message.toString());
+          });
+        });
+      }
 
-  let chatHistory: ChatHistoryEntry[] = [];
-  let repositoryData: RepositoryData;
+      let continueInterview = true;
+      let userInput: string;
 
-  try {
-    repositoryData = await getData();
-    console.log("Repository data loaded successfully.\n");
-  } catch (error) {
-    console.error("Failed to load repository data:", error);
-    rl.close();
-    return;
-  }
-
-  const interviewerPrompt = ChatPromptTemplate.fromMessages([
-    [
-      "system",
-      `You are a seasoned technical interviewer with years of experience in assessing candidates for software engineering roles. Your job is to ask insightful, real-world technical questions based on:
-    
-                The project description and/or README
-                Any available data from web scraping related to the project (such as website content, documentation, or public interfaces)
-                The provided tech stack used in the project
-    
-                Ask detailed, context-aware interview questions that test the candidate's:
-                - Understanding of project architecture and design decisions
-                - Practical knowledge of the specified technologies
-                - Ability to scale, optimize, and maintain the system
-                - Problem-solving skills through scenario-based questions relevant to the project
-    
-                Your questions should mimic those asked in real technical interviews for roles like backend developer, frontend engineer, full-stack developer, or DevOps, depending on the project's context.
-    
-                Ask as if you're interviewing a candidate for a job that involves working on or maintaining this project in the real world.
-                
-                Ask ONE question at a time(also if they are of same tapic then only one question at a time), wait for their response, and then follow up appropriately or ask new question.
-                After they answer, evaluate their response mentally and ask a follow-up question or ask new question.
-                
-                Start with an introduction and then proceed with your first question.
-                
-                Your role is to behave exactly like a real interviewer:
-                    - without narrating or explaining things to the candidate in breif.
-                    - Do **not** summarize the candidates answers too long just one or two line.
-                    - Ask **one** clear question at a time(dont make parts in one question).
-                    - After each response, continue the conversation by asking a relevant **follow-up question** or **next topic**  just like a real interviewer would.
-                    -Do not output formatting or commentary
-                    -based on the complexity of project ask between 10-15 questions.
-                    -question can be mix of any type like coding, design, architecture, system design, etc. and can be mix of any level like easy, medium, hard.
-                
-                The repository information is: 
-                readme:${JSON.stringify(repositoryData.readme)},
-                dependencies:${JSON.stringify(repositoryData.dependencies)}`,
-    ],
-    new MessagesPlaceholder("chat_history"),
-    ["human", "{input}"],
-  ]);
-
-  const chain = interviewerPrompt.pipe(llm);
-
-  console.log(
-    "Technical interview simulation starting. Type 'exit' any time to end the session.\n"
-  );
-  console.log(
-    "The AI interviewer will ask you questions about the project. Answer as if you're in a real interview.\n"
-  );
-  console.log("Press Enter to start the interview:");
-
-  // Function to get user input
-  const getUserInput = () => {
-    return new Promise<string>((resolve) => {
-      rl.question("Your answer> ", (input) => {
-        resolve(input);
-      });
-    });
-  };
-
-  // Function to display chat history
-  const displayChatHistory = () => {
-    console.log("\n===== INTERVIEW TRANSCRIPT =====");
-    chatHistory.forEach((entry, index) => {
-      console.log(`\n--- Exchange ${index + 1} ---`);
-      console.log(`Interviewer: ${entry.interviewer}`);
-      console.log(`You: ${entry.candidate}`);
-    });
-    console.log("\n==============================");
-  };
-
-  // Start interview with an empty prompt to get the first question
-  let continueInterview = true;
-  let userInput = "";
-
-  // Initial question from AI
-  try {
-    console.log("AI Interviewer is preparing the first question...");
-    const response = await chain.invoke({
-      input: "Please start the interview with your first question.",
-      chat_history: [],
-    });
-
-    console.log(`\nInterviewer: ${response.content}\n`);
-    userInput = await getUserInput();
-    await memory.saveContext(
-      { input: userInput },
-      { output: response.content }
-    );
-
-    if (userInput.toLowerCase() === "exit") {
-      console.log("\nExiting interview session...");
-      displayChatHistory();
-      rl.close();
-      return;
-    }
-
-    chatHistory.push({
-      interviewer: String(response.content),
-      candidate: userInput,
-    });
-  } catch (error) {
-    console.error("Error starting interview:", error);
-    rl.close();
-    return;
-  }
-
-  while (continueInterview) {
-    userInput = await getUserInput();
-
-    if (userInput.toLowerCase() === "exit") {
-      console.log("\nExiting interview session...");
-      displayChatHistory();
-      rl.close();
-      break;
-    }
-
-    try {
-      console.log("AI Interviewer is evaluating your response...");
-
-      const memoryVariables = await memory.loadMemoryVariables({});
-
-      const response = await chain.invoke({
-        input: userInput,
-        chat_history: memoryVariables.chat_history || [],
-      });
-
-      console.log(`\nInterviewer: ${response.content}\n`);
-
-      chatHistory.push({
-        interviewer: String(response.content),
-        candidate: userInput,
-      });
-
-      await memory.saveContext(
-        { input: userInput },
-        { output: response.content }
+      console.log(
+        "Technical interview simulation starting. Type 'exit' any time to end the session.\n"
       );
-    } catch (error) {
-      console.error("Error during interview:", error);
-    }
-  }
+      console.log(
+        "The AI interviewer will ask you questions about the project. Answer as if you're in a real interview.\n"
+      );
 
-  // Handle socket close to cleanup session data
-  socket.on('close', () => {
-    console.log(`Tech Interview session ${sessionId} ended`);
-    rl.close();
-  });
-  });
+      // Start interview with an empty prompt to get the first question
+      try {
+        console.log("AI Interviewer is preparing the first question...");
+        let response = await chain.invoke({
+          input: "Please start the interview with your first question.",
+        });
 
-  wss.on('listening', () => {
-    console.log(`Tech Interview WebSocket server started for session ${sessionId} on port ${port}`);
-    resolve(`ws://localhost:${port}?sessionId=${sessionId}`);
-  });
+        socket.send(`\nInterviewer: ${response.output}\n`);
+        
+        // Store the first question in chat history
+        chatHistory.push({
+          interviewer: String(response.output),
+          candidate: "",
+        });
 
-  wss.on('error', (error) => {
-    console.error(`Tech WebSocket server error for session ${sessionId}:`, error);
-    activeServers.delete(sessionId);
-    reject(error);
-  });
+        const startTime = Date.now();
+        const endTime = startTime + (INTERVIEW_DURATION_MINUTES * 60 * 1000);
+        const warningTime = endTime - (WARNING_BEFORE_END_MINUTES * 60 * 1000);
+        let isWarningSent = false;
+        let isEnding = false;
 
-  wss.on('close', () => {
-    console.log(`Tech Interview WebSocket server closed for session ${sessionId}`);
-    activeServers.delete(sessionId);
-  });
+        while (continueInterview) {
+          const currentTime = Date.now();
+          
+          // Check if interview should end
+          if (currentTime >= endTime) {
+              const summary = await generate_summery(chatHistory);
+              socket.send(`\nInterview time is up! Thank you for participating.\n\nInterview Summary: ${summary}\n`);
+              socket.close();
+              return;
+          }
+
+          // Send warning when approaching end time
+          if (!isWarningSent && currentTime >= warningTime) {
+              socket.send(`\nNote: ${WARNING_BEFORE_END_MINUTES} minutes remaining in the interview.\n`);
+              isWarningSent = true;
+              isEnding = true;
+          }
+
+          userInput = await getUserInput(socket);
+
+          if (userInput.toLowerCase() === "exit") {
+            console.log("\nExiting interview session...");
+            const summary = await generate_summery(chatHistory);
+            socket.send(`\nInterview Summary: ${summary}\n`);
+            socket.close();
+            return;
+          }
+
+          // Update the last chat history entry with the candidate's response
+          chatHistory[chatHistory.length - 1].candidate = userInput;
+
+          try {
+            console.log("AI Interviewer is evaluating your response...");
+
+            // If we're in the ending period, modify the prompt to wrap up
+            if (isEnding) {
+              response = await chain.invoke({
+                  input: userInput + " [Please wrap up the interview with a final thank you message, no more questions.]",
+              });
+              socket.send(`\nInterviewer: ${response.output}\n`);
+              socket.send("END");
+              const summary = await generate_summery(chatHistory);
+              socket.send(`\nInterview Summary: ${summary}\n`);
+              socket.close();
+              return;
+            } else {
+              response = await chain.invoke({
+                  input: userInput,
+              });
+              socket.send(`\nInterviewer: ${response.output}\n`);
+              
+              chatHistory.push({
+                interviewer: String(response.output),
+                candidate: "",
+              });
+            }
+          } catch (error) {
+            console.error("Error during interview:", error);
+          }
+        }
+      } catch (error) {
+        console.error("Error starting interview:", error);
+        socket.close();
+        return;
+      }
+
+      // Handle socket close to cleanup session data
+      socket.on('close', () => {
+        console.log(`Tech Interview session ${sessionId} ended, cleaning up session data`);
+        sessionData.delete(sessionId);
+      });
+    });
+
+    wss.on('listening', () => {
+      console.log(`Tech Interview WebSocket server started for session ${sessionId} on port ${port}`);
+      resolve(`ws://localhost:${port}?sessionId=${sessionId}`);
+    });
+
+    wss.on('error', (error) => {
+      console.error(`Tech WebSocket server error for session ${sessionId}:`, error);
+      activeServers.delete(sessionId);
+      reject(error);
+    });
+
+    wss.on('close', () => {
+      console.log(`Tech Interview WebSocket server closed for session ${sessionId}`);
+      activeServers.delete(sessionId);
+    });
   });
 }
 
