@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import { ConversationChain } from "langchain/chains";
 import { PrismaClient } from "@prisma/client";
 import { ChatPerplexity } from "@langchain/community/chat_models/perplexity";
+dotenv.config();
 
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -29,6 +30,10 @@ async function loadSampleQA() {
     return [];
   }
 }
+
+
+
+
 
 dotenv.config();
 const prisma = new PrismaClient();
@@ -110,13 +115,13 @@ async function generate_summery(
   }
 }
 
-const INTERVIEW_DURATION_MINUTES = 5; // Configurable interview duration
+const INTERVIEW_DURATION_MINUTES = 5; 
 const WARNING_BEFORE_END_MINUTES = 2;
 
-// Store active WebSocket servers for each session
+
 const activeServers = new Map<string, WebSocketServer>();
 
-// Function to create and start a WebSocket server for a specific session
+
 export function startHRInterviewWebSocket(sessionId: string, port: number): Promise<string> {
   return new Promise((resolve, reject) => {
     // Check if server already exists for this session
@@ -182,13 +187,6 @@ export function startHRInterviewWebSocket(sessionId: string, port: number): Prom
           socket.close(1008, 'Interview session not found');
           return;
         }
-        
-        // Don't delete the record here - keep it for the interview duration
-        // await prisma.hR_Interview.delete({
-        //   where: {
-        //     session: sessionId || ""
-        //   }
-        // })
 
     const hrInterviewerPrompt = ChatPromptTemplate.fromMessages([
       [
@@ -214,8 +212,6 @@ export function startHRInterviewWebSocket(sessionId: string, port: number): Prom
         - Leadership potential
         - Conflict resolution
         - Career motivation
-
-        Here are the sample Question and Answers: {sampleQA}
         Here is the candidate context: {candidate_context}`,
     
       ],
@@ -223,7 +219,7 @@ export function startHRInterviewWebSocket(sessionId: string, port: number): Prom
       ["human", "{input}"],
     ]);
 
-    const chain2 = new ConversationChain({
+    const chain = new ConversationChain({
       llm: llm,
       memory: memory,
       prompt: hrInterviewerPrompt,
@@ -240,14 +236,13 @@ export function startHRInterviewWebSocket(sessionId: string, port: number): Prom
 
     let continueInterview = true;
     let userInput: string;
-    const sampleQAData = await loadSampleQA();
+
 
     try {
       console.log("AI Interviewer is preparing the first question...");
-      let response = await chain2.invoke({
+      let response = await chain.invoke({
         input: "Please start the interview with your first question.",
         candidate_context: JSON.stringify(role_data),
-        sampleQA: JSON.stringify(sampleQAData, null, 2),
       });
       
       socket.send(`\nInterviewer: ${response.output}\n`);
@@ -303,28 +298,24 @@ export function startHRInterviewWebSocket(sessionId: string, port: number): Prom
           
           // If we're in the ending period, modify the prompt to wrap up
           if (isEnding) {
-            response = await chain2.invoke({
+            response = await chain.invoke({
                 input: userInput + " [Please wrap up the interview with a final thank you message, no more questions.]",
                 candidate_context: JSON.stringify(role_data),
-                sampleQA: JSON.stringify(sampleQAData, null, 2),
             });
             
-            // After sending the final message, generate summary and end
+            
             socket.send(`\nInterviewer: ${response.output}\n`);
             const summary = await generate_summery(chatHistory, role_data);
             socket.send(`\nInterview Summary: ${summary}\n`);
             socket.close();
             return;
-          } else {
-            response = await chain2.invoke({
+          }else{
+            response = await chain.invoke({
                 input: userInput,
-                candidate_context: JSON.stringify(role_data),
-                sampleQA: JSON.stringify(sampleQAData, null, 2),
+                candidate_context: JSON.stringify(role_data)
             });
-            
             socket.send(`\nInterviewer: ${response.output}\n`);
             
-            // Add the new interviewer question to chat history
             chatHistory.push({
               interviewer: String(response.output),
               candidate: "",
@@ -340,18 +331,16 @@ export function startHRInterviewWebSocket(sessionId: string, port: number): Prom
       return;
     }
 
+
     // Handle socket close to cleanup session data
     socket.on('close', () => {
       console.log(`Interview session ${sessionId} ended, cleaning up session data`);
       sessionData.delete(sessionId);
-      
-      // Clean up database record when interview session ends
       prisma.hR_Interview.delete({
         where: {
           session: sessionId
         }
       }).catch(error => {
-        // Ignore errors if record doesn't exist
         console.log(`Cleanup: Record for session ${sessionId} was already deleted`);
       });
     });
@@ -376,7 +365,8 @@ export function startHRInterviewWebSocket(sessionId: string, port: number): Prom
   });
 }
 
-// Function to stop a WebSocket server for a specific session
+
+
 export function stopHRInterviewWebSocket(sessionId: string): void {
   const wss = activeServers.get(sessionId);
   if (wss) {
@@ -386,25 +376,19 @@ export function stopHRInterviewWebSocket(sessionId: string): void {
   }
 }
 
-// Function to get available port for new session
+
 export function getAvailablePort(): number {
   const basePort = 5000;
   let port = basePort;
-  
-  // Find an available port by checking active servers
   const usedPorts = new Set<number>();
   for (const [sessionId, server] of activeServers) {
-    // Extract port from server address if available
     const address = server.address();
     if (address && typeof address === 'object' && 'port' in address) {
       usedPorts.add(address.port);
     }
   }
-  
-  // Find the next available port
   while (usedPorts.has(port)) {
     port++;
   }
-  
   return port;
 }

@@ -39,26 +39,6 @@ hr_data.post("/hr_data", async (req, res) => {
             }
         } catch (dbError) {
             console.error("Database error:", dbError);
-            
-            // Even if database fails, try to start WebSocket server
-            try {
-                const websocketUrl = await startHRInterviewWebSocket(sessionId, port);
-                res.json({ 
-                    sessionId, 
-                    websocketUrl,
-                    data: {
-                        name,
-                        role,
-                        experience,
-                        company_applying,
-                        job_description
-                    },
-                    notice: "Session data not stored in database"
-                });
-            } catch (wsError) {
-                console.error("WebSocket server error:", wsError);
-                res.status(500).json({ error: "Failed to start interview session" });
-            }
         }
     } catch (error) {
         console.error("Error in /hr_data route:", error);

@@ -155,26 +155,5 @@ uploadRouter.post("/live-upload", usermiddleware,async (req, res) => {
 });
 
 
-//ml project
-uploadRouter.post("/ml_project",usermiddleware,async(req,res)=>{
-    try{
-        const userId = req.userId;
-        if(!userId){
-            res.status(401).json({error: "Unauthorized"});
-            return;
-        }
-        const user = await prisma.user.findUnique({
-            where: { id: userId },
-        });
-        if (!user) {
-            res.status(401).json({ error: 'Unauthorized' });
-            return;
-        }
-        const description = req.body;
-        res.json(description);
-    }catch(e){
-        console.error("Error in /ml_project route:", e);
-        res.status(500).json({ error: "Internal server error" });
-    }
-});
+
 

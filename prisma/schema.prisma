@@ -28,9 +28,7 @@ model User {
   authProvider AuthProvider @default(LOCAL)
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
-  // hrReports    HR_report[]
-  // technicalReports Technical_report[]
-  // mlReports    ML_interview[]
+  
 }
 model HR_Interview{
   id String @id @default(uuid())
@@ -49,49 +47,8 @@ model Upload_data{
   
 }
 
-
-
-
-
-
-// model HR_report{
-//   id                      String   @id @default(uuid())
-//   userId                  String
-//   user                    User     @relation(fields: [userId], references: [id])
-//   Communication_Skill     Int
-//   Confidence_Attitude     Int 
-//   Cultural_Fit            Int
-//   Teamwork_Collaboration  Int
-//   Adaptability_Learning   Int
-//   Motivation_Passion      Int
-//   Problem_Ownership       Int
-//   Integrity_Professionalism Int
-//   Situational_Judgement   Int
-//   createdAt               DateTime @default(now())
-// }
-
-// model Technical_report{
-//   id                      String   @id @default(uuid())
-//   userId                  String
-//   user                    User     @relation(fields: [userId], references: [id])
-//   Technical_knowledge     Int
-//   Problem_solving         Int
-//   Coding_skills           Int
-//   System_design           Int
-//   Debugging_skills        Int
-//   createdAt               DateTime @default(now())
-// }
-
-// model ML_interview{
-//   id                      String   @id @default(uuid())
-//   userId                  String
-//   user                    User     @relation(fields: [userId], references: [id])
-//   ML_knowledge            Int
-//   Accurecy_of_answer      Int
-//   Fundamentals            Int
-//   Uderstanding_of_project Int
-//   Scalablity_of_project   Int
-//   Clearity                Int
-//   createdAt               DateTime @default(now())
-
-// }
+model ML_Interview{
+  id String @id @default(uuid())
+  session String @unique
+  description String
+}
