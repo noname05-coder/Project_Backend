@@ -7,35 +7,6 @@ import { PrismaClient } from "@prisma/client";
 import { ChatPerplexity } from "@langchain/community/chat_models/perplexity";
 dotenv.config();
 
-import * as fs from 'fs/promises';
-import * as path from 'path';
-
-async function loadSampleQA() {
-  try {
-    const filePath = path.join(__dirname, '../../data/sample_qa.txt');
-    const content = await fs.readFile(filePath, 'utf-8');
-    
-    // Parse the content into Q&A pairs
-    const qaPairs = content.split('\n\n').map(pair => {
-      const [question, answer] = pair.split('\nA: ');
-      return {
-        question: question.replace('Q: ', '').trim(),
-        expectedAnswer: answer.trim()
-      };
-    });
-    
-    return qaPairs;
-  } catch (error) {
-    console.error('Error loading sample Q&A:', error);
-    return [];
-  }
-}
-
-
-
-
-
-dotenv.config();
 const prisma = new PrismaClient();
 
 const llm = new ChatPerplexity({
@@ -182,6 +153,12 @@ export function startHRInterviewWebSocket(sessionId: string, port: number): Prom
             company_applying: hr_interview.company_applying,
             job_description: hr_interview.job_description
           };
+          await prisma.hR_Interview.delete({
+            where:{
+              session: sessionId
+            }
+          });
+
         } else {
           // If no record found, close the connection
           socket.close(1008, 'Interview session not found');
@@ -331,17 +308,9 @@ export function startHRInterviewWebSocket(sessionId: string, port: number): Prom
     }
 
 
-    // Handle socket close to cleanup session data
     socket.on('close', () => {
       console.log(`Interview session ${sessionId} ended, cleaning up session data`);
       sessionData.delete(sessionId);
-      prisma.hR_Interview.delete({
-        where: {
-          session: sessionId
-        }
-      }).catch(error => {
-        console.log(`Cleanup: Record for session ${sessionId} was already deleted`);
-      });
     });
 
     });

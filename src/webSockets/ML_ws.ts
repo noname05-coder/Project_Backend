@@ -143,6 +143,11 @@ export function startMLInterviewWebSocket(sessionId: string, port: number): Prom
         project_data = {
           description: ml_interview.description
         };
+        await prisma.mL_Interview.delete({
+          where:{
+            session: sessionId
+          }
+        });
       } else {
         // If no record found, close the connection
         socket.close(1008, 'ML Interview session not found');

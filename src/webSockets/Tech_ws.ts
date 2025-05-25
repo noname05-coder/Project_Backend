@@ -42,28 +42,6 @@ const sessionData = new Map<string, {
   repositoryData: RepositoryData;
 }>();
 
-async function getData() {
-  try {
-    const response = await axios.post(
-      "http://localhost:3000/api/v1/upload/github-upload",
-      {
-        githubUrl: "https://github.com/punyajain1/Intelliguide",
-      },
-      {
-        headers: {
-          authorization:
-            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI4YWY3MWExMS1kNGNiLTQwYzUtYWQ2NC03ZWJhMDczMTNiMTIiLCJpYXQiOjE3NDc4MTEwODEsImV4cCI6MTc0Nzg5NzQ4MX0.ArfE5nuiMO1Rs_6Qna1Q4j7-WlrWVdVMjp9E9WGK9kk",
-        },
-      }
-    );
-    console.log("Retrieved repository data successfully");
-    return response.data as RepositoryData;
-  } catch (error) {
-    console.error("Failed to fetch repository data:", error);
-    throw error;
-  }
-}
-
 //generating the summery of the interview
 async function generate_summery(chat_history: ChatHistoryEntry[]) {
   try {
@@ -178,6 +156,11 @@ export function startTechInterviewWebSocket(sessionId: string, port: number): Pr
             site_data: result.site_data,
             description: result.description
           };
+
+          await prisma.tech_Interview.delete({
+            where: { session: sessionId }
+          });
+
           console.log("Repository data loaded successfully.\n");
         }catch(error){
           console.error("Failed to load repository data:", error);
