@@ -111,11 +111,10 @@ uploadRouter.post('/github-upload',async (req, res) => {
       }
     }
 
-    const sessionId = uuidv4(); // Keep this for WebSocket session management
+    const sessionId = uuidv4();
     const port = getTechAvailablePort();
-    
 
-    try {
+    try{
       await prisma.tech_Interview.create({
         data: {
           session: sessionId, // Use sessionId instead of repoName
@@ -126,7 +125,6 @@ uploadRouter.post('/github-upload',async (req, res) => {
         },
       });
       
-      // Start WebSocket server for this session
       try {
         const websocketUrl = await startTechInterviewWebSocket(sessionId, port);
         res.json({ websocketUrl});
@@ -142,34 +140,6 @@ uploadRouter.post('/github-upload',async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
-
-
-
-//live project
-// uploadRouter.post("/live-upload", usermiddleware,async (req, res) => {
-//   const user = await prisma.user.findUnique({
-//     where: { id: req.userId },
-//   });
-//   if (!user) {
-//     res.status(401).json({ error: "Unauthorized" });
-//     return;
-//   }
-//   const { projectUrl } = req.body;
-//   try {
-//     const scrapeResponse = await app.scrapeUrl(`${projectUrl}`, {formats: ['markdown', 'html'],});
-//     if (!scrapeResponse.success) {
-//       res.status(401).json({msg: "Failed to scrape project", error: scrapeResponse.error });
-//       return;
-//     };
-//     res.status(200).json({
-//       message: "Project scraped successfully",
-//       siteData: scrapeResponse.markdown,
-//     });
-   
-//   } catch (err) {
-//     res.status(500).json({ error: "Failed to create project", details: err });
-//   }
-// });
 
 
 

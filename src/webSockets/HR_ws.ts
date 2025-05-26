@@ -101,7 +101,7 @@ export function startHRInterviewWebSocket(sessionId: string, port: number): Prom
     const wss = new WebSocketServer({ port });
     activeServers.set(sessionId, wss);
 
-    wss.on("connection", async function (socket, req) {        // Parse sessionId from query string
+    wss.on("connection", async function (socket, req) {
         const url = new URL(req.url || '', 'http://localhost');
         console.log(url);
         const requestSessionId = url.searchParams.get('sessionId');
@@ -109,6 +109,7 @@ export function startHRInterviewWebSocket(sessionId: string, port: number): Prom
         // Validate that the connection is for the correct session
         if (requestSessionId !== sessionId) {
             socket.close(1008, 'Invalid session ID');
+            console.log(`Invalid session ID attempted: ${requestSessionId}, expected: ${sessionId}`);
             return;
         }
       
@@ -157,7 +158,8 @@ export function startHRInterviewWebSocket(sessionId: string, port: number): Prom
           });
 
         } else {
-          // If no record found, close the connection
+          // If no record found, close only this connection
+          console.log(`Interview session not found for session: ${sessionId}`);
           socket.close(1008, 'Interview session not found');
           return;
         }
@@ -255,7 +257,21 @@ export function startHRInterviewWebSocket(sessionId: string, port: number): Prom
         socket.send("END");
         socket.send(`\nInterview Summary: ${summary}\n`);
         continueInterview = false;
+        
+        // Clean up session data
+        sessionData.delete(sessionId);
+        
+        // Close socket and server
         socket.close();
+        
+        // Close and clean up the WebSocket server
+        const wss = activeServers.get(sessionId);
+        if (wss) {
+          wss.close(() => {
+            console.log(`WebSocket server for session ${sessionId} closed due to timeout`);
+          });
+          activeServers.delete(sessionId);
+        }
       }, endTime - startTime);
 
       while(continueInterview) {
@@ -267,7 +283,22 @@ export function startHRInterviewWebSocket(sessionId: string, port: number): Prom
           continueInterview = false;
           clearTimeout(warningTimer);
           clearTimeout(endTimer);
+          
+          // Clean up session data
+          sessionData.delete(sessionId);
+          
+          // Close socket first
           socket.close();
+          
+          // Close and clean up the WebSocket server
+          const wss = activeServers.get(sessionId);
+          if (wss) {
+            wss.close(() => {
+              console.log(`WebSocket server for session ${sessionId} closed due to exit command`);
+            });
+            activeServers.delete(sessionId);
+          }
+          
           return;
         }
         
@@ -292,7 +323,22 @@ export function startHRInterviewWebSocket(sessionId: string, port: number): Prom
               continueInterview = false;
               clearTimeout(warningTimer);
               clearTimeout(endTimer);
+              
+              // Clean up session data
+              sessionData.delete(sessionId);
+              
+              // Close socket and server
               socket.close();
+              
+              // Close and clean up the WebSocket server
+              const wss = activeServers.get(sessionId);
+              if (wss) {
+                wss.close(() => {
+                  console.log(`WebSocket server for session ${sessionId} closed due to interview completion`);
+                });
+                activeServers.delete(sessionId);
+              }
+              
               return;
             }
           } else {
@@ -318,6 +364,19 @@ export function startHRInterviewWebSocket(sessionId: string, port: number): Prom
 
     } catch (error) {
       console.error("Error starting interview:", error);
+      
+      // Clean up session data
+      sessionData.delete(sessionId);
+      
+      // Close and clean up the WebSocket server
+      const wss = activeServers.get(sessionId);
+      if (wss) {
+        wss.close(() => {
+          console.log(`WebSocket server for session ${sessionId} closed due to error`);
+        });
+        activeServers.delete(sessionId);
+      }
+      
       return;
     }
 
@@ -325,6 +384,16 @@ export function startHRInterviewWebSocket(sessionId: string, port: number): Prom
     socket.on('close', () => {
       console.log(`Interview session ${sessionId} ended, cleaning up session data`);
       sessionData.delete(sessionId);
+      
+      // Clean up the WebSocket server if it still exists
+      const wss = activeServers.get(sessionId);
+      if (wss && wss.clients.size === 0) {
+        // Only close the server if there are no other clients
+        wss.close(() => {
+          console.log(`WebSocket server for session ${sessionId} closed - no active clients`);
+        });
+        activeServers.delete(sessionId);
+      }
     });
 
     });

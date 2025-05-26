@@ -107,7 +107,17 @@ export function startMLInterviewWebSocket(sessionId: string, port: number): Prom
       
       // Validate that the connection is for the correct session
       if (requestSessionId !== sessionId) {
+        // Clean up and close server for invalid session
         socket.close(1008, 'Invalid session ID');
+        
+        const wss = activeServers.get(sessionId);
+        if (wss) {
+          wss.close(() => {
+            console.log(`WebSocket server for session ${sessionId} closed due to invalid session ID`);
+          });
+          activeServers.delete(sessionId);
+        }
+        
         return;
       }
     
@@ -146,7 +156,21 @@ export function startMLInterviewWebSocket(sessionId: string, port: number): Prom
         await prisma.mL_Interview.delete({where:{session: sessionId}});
       }else{
         // If no record found, close the connection
+        // Clean up session data
+        sessionData.delete(sessionId);
+        
+        // Close socket and server
         socket.close(1008, 'ML Interview session not found');
+        
+        // Close and clean up the WebSocket server
+        const wss = activeServers.get(sessionId);
+        if (wss) {
+          wss.close(() => {
+            console.log(`WebSocket server for session ${sessionId} closed due to ML session not found`);
+          });
+          activeServers.delete(sessionId);
+        }
+        
         return;
       }
 
@@ -239,7 +263,9 @@ export function startMLInterviewWebSocket(sessionId: string, port: number): Prom
         const endTimer = setTimeout(async () => {
           console.log("Interview time limit reached, ending interview...");
           const summary = await generate_summery(chatHistory, project_data);
-          socket.send(`\nInterview time is up! Thank you for participating.\n\nML Interview Summary: ${summary}\n`);
+          socket.send(`\nInterview time is up! Thank you for participating.\n`);
+          socket.send("END");
+          socket.send(`\nML Interview Summary: ${summary}\n`);
           continueInterview = false;
           socket.close();
         }, endTime - startTime);
@@ -253,7 +279,22 @@ export function startMLInterviewWebSocket(sessionId: string, port: number): Prom
             continueInterview = false;
             clearTimeout(warningTimer);
             clearTimeout(endTimer);
+            
+            // Clean up session data
+            sessionData.delete(sessionId);
+            
+            // Close socket first
             socket.close();
+            
+            // Close and clean up the WebSocket server
+            const wss = activeServers.get(sessionId);
+            if (wss) {
+              wss.close(() => {
+                console.log(`WebSocket server for session ${sessionId} closed due to exit command`);
+              });
+              activeServers.delete(sessionId);
+            }
+            
             return;
           }
 
@@ -273,6 +314,7 @@ export function startMLInterviewWebSocket(sessionId: string, port: number): Prom
               // Don't immediately end if we've just entered ending mode
               if (Date.now() >= endTime) {
                 const summary = await generate_summery(chatHistory, project_data);
+                socket.send("END");
                 socket.send(`\nML Interview Summary: ${summary}\n`);
                 continueInterview = false;
                 clearTimeout(warningTimer);
@@ -310,6 +352,17 @@ export function startMLInterviewWebSocket(sessionId: string, port: number): Prom
       socket.on('close', () => {
         console.log(`ML Interview session ${sessionId} ended, cleaning up session data`);
         sessionData.delete(sessionId);
+        
+        // Clean up the WebSocket server if it still exists
+        const wss = activeServers.get(sessionId);
+        if (wss && wss.clients.size === 0) {
+          // Only close the server if there are no other clients
+          wss.close(() => {
+            console.log(`WebSocket server for session ${sessionId} closed - no active clients`);
+          });
+          activeServers.delete(sessionId);
+        }
+        
         prisma.mL_Interview.delete({
           where: {
             session: sessionId

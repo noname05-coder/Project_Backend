@@ -4,7 +4,6 @@ import { ChatOpenAI } from "@langchain/openai";
 import { ConversationSummaryMemory } from "langchain/memory";
 import { ConversationChain } from "langchain/chains";
 import { PrismaClient } from "@prisma/client";
-import axios from "axios";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -114,7 +113,9 @@ export function startTechInterviewWebSocket(sessionId: string, port: number): Pr
       
       // Validate that the connection is for the correct session
       if (requestSessionId !== sessionId) {
+          // Clean up and close server for invalid session
           socket.close(1008, 'Invalid session ID');
+          console.log(`Invalid session ID attempted: ${requestSessionId}, expected: ${sessionId}`);
           return;
       }
 
@@ -164,7 +165,22 @@ export function startTechInterviewWebSocket(sessionId: string, port: number): Pr
           console.log("Repository data loaded successfully.\n");
         }catch(error){
           console.error("Failed to load repository data:", error);
+          
+          // Clean up session data
+          sessionData.delete(sessionId);
+          
+          // Close socket and server
           socket.close(1011, 'Failed to load repository data');
+          
+          // Close and clean up the WebSocket server
+          const wss = activeServers.get(sessionId);
+          if (wss) {
+            wss.close(() => {
+              console.log(`WebSocket server for session ${sessionId} closed due to data loading error`);
+            });
+            activeServers.delete(sessionId);
+          }
+          
           return;
         }
         
@@ -280,9 +296,25 @@ export function startTechInterviewWebSocket(sessionId: string, port: number): Pr
         const endTimer = setTimeout(async () => {
           console.log("Interview time limit reached, ending interview...");
           const summary = await generate_summery(chatHistory);
-          socket.send(`\nInterview time is up! Thank you for participating.\n\nInterview Summary: ${summary}\n`);
+          socket.send(`\nInterview time is up! Thank you for participating.\n`);
+          socket.send("END");
+          socket.send(`\nInterview Summary: ${summary}\n`);
           continueInterview = false;
+          
+          // Clean up session data
+          sessionData.delete(sessionId);
+          
+          // Close socket and server
           socket.close();
+          
+          // Close and clean up the WebSocket server
+          const wss = activeServers.get(sessionId);
+          if (wss) {
+            wss.close(() => {
+              console.log(`WebSocket server for session ${sessionId} closed due to timeout`);
+            });
+            activeServers.delete(sessionId);
+          }
         }, endTime - startTime);
 
         while (continueInterview) {
@@ -294,7 +326,22 @@ export function startTechInterviewWebSocket(sessionId: string, port: number): Pr
             continueInterview = false;
             clearTimeout(warningTimer);
             clearTimeout(endTimer);
+            
+            // Clean up session data
+            sessionData.delete(sessionId);
+            
+            // Close socket first
             socket.close();
+            
+            // Close and clean up the WebSocket server
+            const wss = activeServers.get(sessionId);
+            if (wss) {
+              wss.close(() => {
+                console.log(`WebSocket server for session ${sessionId} closed due to exit command`);
+              });
+              activeServers.delete(sessionId);
+            }
+            
             return;
           }
 
@@ -314,11 +361,27 @@ export function startTechInterviewWebSocket(sessionId: string, port: number): Pr
               // Don't immediately end if we've just entered ending mode
               if (Date.now() >= endTime) {
                 const summary = await generate_summery(chatHistory);
+                socket.send("END");
                 socket.send(`\nInterview Summary: ${summary}\n`);
                 continueInterview = false;
                 clearTimeout(warningTimer);
                 clearTimeout(endTimer);
+                
+                // Clean up session data
+                sessionData.delete(sessionId);
+                
+                // Close socket and server
                 socket.close();
+                
+                // Close and clean up the WebSocket server
+                const wss = activeServers.get(sessionId);
+                if (wss) {
+                  wss.close(() => {
+                    console.log(`WebSocket server for session ${sessionId} closed due to interview completion`);
+                  });
+                  activeServers.delete(sessionId);
+                }
+                
                 return;
               }
             } else {
@@ -342,7 +405,22 @@ export function startTechInterviewWebSocket(sessionId: string, port: number): Pr
         clearTimeout(endTimer);
       } catch (error) {
         console.error("Error starting interview:", error);
+        
+        // Clean up session data
+        sessionData.delete(sessionId);
+        
+        // Close socket and server
         socket.close();
+        
+        // Close and clean up the WebSocket server
+        const wss = activeServers.get(sessionId);
+        if (wss) {
+          wss.close(() => {
+            console.log(`WebSocket server for session ${sessionId} closed due to error`);
+          });
+          activeServers.delete(sessionId);
+        }
+        
         return;
       }
 
@@ -350,6 +428,16 @@ export function startTechInterviewWebSocket(sessionId: string, port: number): Pr
       socket.on('close', () => {
         console.log(`Tech Interview session ${sessionId} ended, cleaning up session data`);
         sessionData.delete(sessionId);
+        
+        // Clean up the WebSocket server if it still exists
+        const wss = activeServers.get(sessionId);
+        if (wss && wss.clients.size === 0) {
+          // Only close the server if there are no other clients
+          wss.close(() => {
+            console.log(`WebSocket server for session ${sessionId} closed - no active clients`);
+          });
+          activeServers.delete(sessionId);
+        }
       });
     });
 
