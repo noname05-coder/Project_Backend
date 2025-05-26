@@ -131,7 +131,7 @@ export function startTechInterviewWebSocket(sessionId: string, port: number): Pr
         
         let repositoryData: RepositoryData;
         try {
-          const result = await prisma.tech_Interview.findUnique({where: { session: sessionId },});
+          const result = await prisma.tech_Interview.findUnique({where: { session: sessionId }});
           if (!result) {
             throw new Error(`No repository data found for session ${sessionId}`);
           }
@@ -165,14 +165,8 @@ export function startTechInterviewWebSocket(sessionId: string, port: number): Pr
           console.log("Repository data loaded successfully.\n");
         }catch(error){
           console.error("Failed to load repository data:", error);
-          
-          // Clean up session data
           sessionData.delete(sessionId);
-          
-          // Close socket and server
           socket.close(1011, 'Failed to load repository data');
-          
-          // Close and clean up the WebSocket server
           const wss = activeServers.get(sessionId);
           if (wss) {
             wss.close(() => {
@@ -180,7 +174,6 @@ export function startTechInterviewWebSocket(sessionId: string, port: number): Pr
             });
             activeServers.delete(sessionId);
           }
-          
           return;
         }
         

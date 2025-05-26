@@ -58,11 +58,18 @@ async function generate_summery(
           "Model Selection & Architecture": "X%",
           "Training & Optimization": "X%",
           "Evaluation Metrics & Validation": "X%",
-          "Programming & Implementation": "X%",
           "Problem-Solving Approach": "X%",
           "Mathematical Foundation": "X%",
           "Communication of Technical Concepts": "X%"
         }
+        dont include any explaination , just the JSON object.
+        
+        in json format give me some feedback on the candidate's performance, including strengths and areas for improvement.
+        {
+          "strength:[] (sting of strength here),
+          "areas_for_improvement:[] (string of areas for improvement here)"
+        }
+
           
         Here's the ML project description: {project_details}
         Here is the interview transcript: {transcript}`,
@@ -143,11 +150,7 @@ export function startMLInterviewWebSocket(sessionId: string, port: number): Prom
       
       const { memory, chatHistory } = sessionData.get(sessionId)!;
 
-      const ml_interview = await prisma.mL_Interview.findUnique({
-        where: {
-          session: sessionId || ""
-        }
-      });
+      const ml_interview = await prisma.mL_Interview.findUnique({where: {session: sessionId}});
       
       if (ml_interview) {
         project_data = {

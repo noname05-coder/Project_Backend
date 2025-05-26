@@ -137,11 +137,7 @@ export function startHRInterviewWebSocket(sessionId: string, port: number): Prom
         
         const { memory, chatHistory } = sessionData.get(sessionId)!;
     
-        const hr_interview = await prisma.hR_Interview.findUnique({
-          where: {
-            session: sessionId || ""
-          }
-        });
+        const hr_interview = await prisma.hR_Interview.findUnique({where: {session: sessionId}});
         
         if(hr_interview){
           role_data = {
@@ -306,7 +302,6 @@ export function startHRInterviewWebSocket(sessionId: string, port: number): Prom
         chatHistory[chatHistory.length - 1].candidate = userInput;
          try {
           console.log("AI Interviewer is evaluating your response...");
-          
           if (isEnding) {
             response = await chain.invoke({
                 input: userInput + " [Please wrap up the interview with a final thank you message, no more questions.]",
