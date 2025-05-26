@@ -58,14 +58,11 @@ async function generate_summery(
         
         The JSON should follow this structure (with percentages that reflect your assessment:
           "Communication Skills": "X%",
+          "Technical Knowledge": "X%",
           "Confidence & Attitude": "X%",
-          "Cultural Fit": "X%",
           "Teamwork & Collaboration": "X%",
-          "Adaptability & Learning Ability": "X%",
-          "Motivation & Passion": "X%",
-          "Problem Ownership": "X%",
           "Integrity & Professionalism": "X%",
-          "Situational Judgement": "X%"
+          "Situational Judgement & Solving": "X%"
           
         Here's the interview details: {interview_details}
         Here is the interview transcript: {transcript}`,
@@ -86,8 +83,8 @@ async function generate_summery(
   }
 }
 
-const INTERVIEW_DURATION_MINUTES = 5; 
-const WARNING_BEFORE_END_MINUTES = 2;
+const INTERVIEW_DURATION_MINUTES = 2; 
+const WARNING_BEFORE_END_MINUTES = 1;
 
 
 const activeServers = new Map<string, WebSocketServer>();
@@ -254,7 +251,9 @@ export function startHRInterviewWebSocket(sessionId: string, port: number): Prom
       const endTimer = setTimeout(async () => {
         console.log("Interview time limit reached, ending interview...");
         const summary = await generate_summery(chatHistory, role_data);
-        socket.send(`\nInterview time is up! Thank you for participating.\n\nInterview Summary: ${summary}\n`);
+        socket.send(`\nInterview time is up! Thank you for participating.\n`);
+        socket.send("END");
+        socket.send(`\nInterview Summary: ${summary}\n`);
         continueInterview = false;
         socket.close();
       }, endTime - startTime);
@@ -288,6 +287,7 @@ export function startHRInterviewWebSocket(sessionId: string, port: number): Prom
             // Don't immediately end if we've just entered ending mode
             if (Date.now() >= endTime) {
               const summary = await generate_summery(chatHistory, role_data);
+              socket.send("END");
               socket.send(`\nInterview Summary: ${summary}\n`);
               continueInterview = false;
               clearTimeout(warningTimer);

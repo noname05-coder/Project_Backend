@@ -2,7 +2,6 @@ import Router from 'express'
 import { exec } from 'child_process'
 import path from 'path'
 import fs from 'fs/promises'
-import { usermiddleware } from '../middleware/usermiddleware'
 import { PrismaClient } from '@prisma/client';
 import FirecrawlApp from '@mendable/firecrawl-js';
 import { v4 as uuidv4 } from 'uuid';
@@ -147,30 +146,30 @@ uploadRouter.post('/github-upload',async (req, res) => {
 
 
 //live project
-uploadRouter.post("/live-upload", usermiddleware,async (req, res) => {
-  const user = await prisma.user.findUnique({
-    where: { id: req.userId },
-  });
-  if (!user) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
-  const { projectUrl } = req.body;
-  try {
-    const scrapeResponse = await app.scrapeUrl(`${projectUrl}`, {formats: ['markdown', 'html'],});
-    if (!scrapeResponse.success) {
-      res.status(401).json({msg: "Failed to scrape project", error: scrapeResponse.error });
-      return;
-    };
-    res.status(200).json({
-      message: "Project scraped successfully",
-      siteData: scrapeResponse.markdown,
-    });
+// uploadRouter.post("/live-upload", usermiddleware,async (req, res) => {
+//   const user = await prisma.user.findUnique({
+//     where: { id: req.userId },
+//   });
+//   if (!user) {
+//     res.status(401).json({ error: "Unauthorized" });
+//     return;
+//   }
+//   const { projectUrl } = req.body;
+//   try {
+//     const scrapeResponse = await app.scrapeUrl(`${projectUrl}`, {formats: ['markdown', 'html'],});
+//     if (!scrapeResponse.success) {
+//       res.status(401).json({msg: "Failed to scrape project", error: scrapeResponse.error });
+//       return;
+//     };
+//     res.status(200).json({
+//       message: "Project scraped successfully",
+//       siteData: scrapeResponse.markdown,
+//     });
    
-  } catch (err) {
-    res.status(500).json({ error: "Failed to create project", details: err });
-  }
-});
+//   } catch (err) {
+//     res.status(500).json({ error: "Failed to create project", details: err });
+//   }
+// });
 
 
 
