@@ -225,9 +225,12 @@ export function startTechInterviewWebSocket(sessionId: string, port: number): Pr
 
       function getUserInput(socket: any): Promise<string> {
         return new Promise<string>((resolve) => {
-          socket.on("message", (message: string) => {
+          const messageHandler = (message: string) => {
+            // Remove the listener after receiving the message
+            socket.removeListener("message", messageHandler);
             resolve(message.toString());
-          });
+          };
+          socket.on("message", messageHandler);
         });
       }
 
@@ -262,30 +265,35 @@ export function startTechInterviewWebSocket(sessionId: string, port: number): Pr
         let isWarningSent = false;
         let isEnding = false;
 
+        console.log(`Interview started at: ${new Date(startTime).toLocaleTimeString()}`);
+        console.log(`Interview will end at: ${new Date(endTime).toLocaleTimeString()}`);
+        console.log(`Warning will be sent at: ${new Date(warningTime).toLocaleTimeString()}`);
+
+        // Set up timers for warning and ending the interview
+        const warningTimer = setTimeout(() => {
+          console.log("Sending warning message...");
+          socket.send(`\nNote: ${WARNING_BEFORE_END_MINUTES} minutes remaining in the interview.\n`);
+          isWarningSent = true;
+          isEnding = true;
+        }, warningTime - startTime);
+
+        const endTimer = setTimeout(async () => {
+          console.log("Interview time limit reached, ending interview...");
+          const summary = await generate_summery(chatHistory);
+          socket.send(`\nInterview time is up! Thank you for participating.\n\nInterview Summary: ${summary}\n`);
+          continueInterview = false;
+          socket.close();
+        }, endTime - startTime);
+
         while (continueInterview) {
-          const currentTime = Date.now();
-          
-          // Check if interview should end
-          if (currentTime >= endTime) {
-              const summary = await generate_summery(chatHistory);
-              socket.send(`\nInterview time is up! Thank you for participating.\n\nInterview Summary: ${summary}\n`);
-              socket.close();
-              return;
-          }
-
-          // Send warning when approaching end time
-          if (!isWarningSent && currentTime >= warningTime) {
-              socket.send(`\nNote: ${WARNING_BEFORE_END_MINUTES} minutes remaining in the interview.\n`);
-              isWarningSent = true;
-              isEnding = true;
-          }
-
           userInput = await getUserInput(socket);
 
           if (userInput.toLowerCase() === "exit") {
             console.log("\nExiting interview session...");
-            const summary = await generate_summery(chatHistory);
-            socket.send(`\nInterview Summary: ${summary}\n`);
+            socket.send(`\nInterview Interrupted\n`);
+            continueInterview = false;
+            clearTimeout(warningTimer);
+            clearTimeout(endTimer);
             socket.close();
             return;
           }
@@ -296,17 +304,23 @@ export function startTechInterviewWebSocket(sessionId: string, port: number): Pr
           try {
             console.log("AI Interviewer is evaluating your response...");
 
-            // If we're in the ending period, modify the prompt to wrap up
             if (isEnding) {
               response = await chain.invoke({
                   input: userInput + " [Please wrap up the interview with a final thank you message, no more questions.]",
               });
+                  
               socket.send(`\nInterviewer: ${response.output}\n`);
-              socket.send("END");
-              const summary = await generate_summery(chatHistory);
-              socket.send(`\nInterview Summary: ${summary}\n`);
-              socket.close();
-              return;
+              
+              // Don't immediately end if we've just entered ending mode
+              if (Date.now() >= endTime) {
+                const summary = await generate_summery(chatHistory);
+                socket.send(`\nInterview Summary: ${summary}\n`);
+                continueInterview = false;
+                clearTimeout(warningTimer);
+                clearTimeout(endTimer);
+                socket.close();
+                return;
+              }
             } else {
               response = await chain.invoke({
                   input: userInput,
@@ -322,6 +336,10 @@ export function startTechInterviewWebSocket(sessionId: string, port: number): Pr
             console.error("Error during interview:", error);
           }
         }
+
+        // Clean up timers if loop exits
+        clearTimeout(warningTimer);
+        clearTimeout(endTimer);
       } catch (error) {
         console.error("Error starting interview:", error);
         socket.close();
