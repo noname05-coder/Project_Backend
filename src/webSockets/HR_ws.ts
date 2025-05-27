@@ -92,8 +92,8 @@ async function generate_summery(
   }
 }
 
-const INTERVIEW_DURATION_MINUTES = 2; 
-const WARNING_BEFORE_END_MINUTES = 1;
+let INTERVIEW_DURATION_MINUTES = 2; 
+const WARNING_BEFORE_END_MINUTES = 3;
 
 
 const activeServers = new Map<string, WebSocketServer>();
@@ -128,7 +128,9 @@ export function startHRInterviewWebSocket(sessionId: string, port: number): Prom
           experience: "",
           company_applying: "",
           job_description: ""
-        };        // Initialize session-specific data
+        };        
+        
+        // Initialize session-specific data
         if (!sessionData.has(sessionId)) {
           const memory = new ConversationSummaryMemory({
             memoryKey: "chat_history",
@@ -149,6 +151,7 @@ export function startHRInterviewWebSocket(sessionId: string, port: number): Prom
         const hr_interview = await prisma.hR_Interview.findUnique({where: {session: sessionId}});
         
         if(hr_interview){
+
           role_data = {
             name: hr_interview.name,
             role: hr_interview.role,
@@ -156,6 +159,9 @@ export function startHRInterviewWebSocket(sessionId: string, port: number): Prom
             company_applying: hr_interview.company_applying,
             job_description: hr_interview.job_description
           };
+          
+          INTERVIEW_DURATION_MINUTES = parseInt(hr_interview.interview_duration);
+          
           await prisma.hR_Interview.delete({
             where:{
               session: sessionId

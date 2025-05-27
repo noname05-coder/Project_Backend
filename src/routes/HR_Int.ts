@@ -9,8 +9,8 @@ export const hr_data = Router();
 
 hr_data.post("/hr_data", async (req, res) => {
     try {
-        const { name, role, experience, company_applying, job_description } = req.body;
-        if (!name || !role || !experience || !company_applying || !job_description) {
+        const { name, role, experience, company_applying, job_description, interview_duration } = req.body;
+        if (!name || !role || !experience || !company_applying || !job_description || !interview_duration) {
             res.status(400).json({ error: "All fields are required" });
             return;
         }
@@ -25,7 +25,8 @@ hr_data.post("/hr_data", async (req, res) => {
                     role,
                     experience,
                     company_applying,
-                    job_description
+                    job_description,
+                    interview_duration
                 }
             });
 

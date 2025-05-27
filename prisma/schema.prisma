@@ -38,7 +38,7 @@ model HR_Interview{
   experience String
   company_applying String
   job_description String
-
+  interview_duration String
 }
 
 model Upload_data{
