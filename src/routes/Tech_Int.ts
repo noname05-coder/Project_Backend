@@ -122,6 +122,7 @@ uploadRouter.post('/github-upload',async (req, res) => {
           readme: readme,
           dependencies: dependencies.toString(),
           site_data: scrapeResponse ? scrapeResponse.markdown : null,
+          interview_duration: "30"
         },
       });
       

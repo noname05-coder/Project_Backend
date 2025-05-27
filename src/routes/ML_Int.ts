@@ -10,7 +10,7 @@ const prisma = new PrismaClient();
 
 mlRouter.post("/ml_project",async(req,res)=>{
     try{
-        const description = req.body;
+        const {description, interview_duration} = req.body;
 
         const sessionId = uuidv4();
         const port = getAvailablePortML();
@@ -19,7 +19,8 @@ mlRouter.post("/ml_project",async(req,res)=>{
             await prisma.mL_Interview.create({
             data: {
                 session: sessionId,
-                description: JSON.stringify(description)
+                description: JSON.stringify(description),
+                interview_duration: interview_duration
             }
             });
             try{

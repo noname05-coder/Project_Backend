@@ -1,6 +1,6 @@
 import { WebSocketServer } from "ws";
 import {ChatPromptTemplate,MessagesPlaceholder,} from "@langchain/core/prompts";
-import { ConversationSummaryMemory } from "langchain/memory";
+import { BufferWindowMemory } from "langchain/memory";
 import dotenv from "dotenv";
 import { ConversationChain } from "langchain/chains";
 import { PrismaClient } from "@prisma/client";
@@ -33,7 +33,7 @@ interface ChatHistoryEntry {
 
 // Store session-specific data
 const sessionData = new Map<string, {
-  memory: ConversationSummaryMemory;
+  memory: BufferWindowMemory;
   chatHistory: ChatHistoryEntry[];
 }>();
 
@@ -71,7 +71,7 @@ async function generate_summery(
         
         Important:
         - DO NOT provide any explanations for the scores - only include the percentage values
-        - Include at least 2-3 specific areas where the candidate could improve
+        - Include at minimum 2-3 and atmaximum 6-7 specific areas where the candidate could improve
           
         Here's the interview details: {interview_details}
         Here is the interview transcript: {transcript}`,
@@ -92,8 +92,8 @@ async function generate_summery(
   }
 }
 
-let INTERVIEW_DURATION_MINUTES = 2; 
-const WARNING_BEFORE_END_MINUTES = 3;
+let INTERVIEW_DURATION_MINUTES = 15; 
+const WARNING_BEFORE_END_MINUTES = 5;
 
 
 const activeServers = new Map<string, WebSocketServer>();
@@ -132,12 +132,11 @@ export function startHRInterviewWebSocket(sessionId: string, port: number): Prom
         
         // Initialize session-specific data
         if (!sessionData.has(sessionId)) {
-          const memory = new ConversationSummaryMemory({
+          const memory = new BufferWindowMemory({
             memoryKey: "chat_history",
             inputKey: "input",
             outputKey: "output",
             returnMessages: true,
-            llm: llm,
           });
           
           sessionData.set(sessionId, {

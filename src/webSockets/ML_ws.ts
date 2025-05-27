@@ -90,8 +90,8 @@ async function generate_summery(
   }
 }
 
-const INTERVIEW_DURATION_MINUTES = 3; 
-const WARNING_BEFORE_END_MINUTES = 1;
+let INTERVIEW_DURATION_MINUTES = 15; 
+const WARNING_BEFORE_END_MINUTES = 5;
 
 const activeServers = new Map<string, WebSocketServer>();
 
@@ -157,6 +157,7 @@ export function startMLInterviewWebSocket(sessionId: string, port: number): Prom
           description: ml_interview.description
         };
         await prisma.mL_Interview.delete({where:{session: sessionId}});
+        INTERVIEW_DURATION_MINUTES = parseInt(ml_interview.interview_duration? ml_interview.interview_duration : "15");
       }else{
         // If no record found, close the connection
         // Clean up session data
@@ -180,30 +181,33 @@ export function startMLInterviewWebSocket(sessionId: string, port: number): Prom
       const mlInterviewerPrompt = ChatPromptTemplate.fromMessages([
         [
           "system",
-          `You are an experienced ML/AI Technical Interviewer conducting a technical interview for machine learning candidates. Your role is to conduct a natural, flowing conversation while evaluating the candidate's technical knowledge.
+          `You are an experienced ML/AI technical interviewer conducting a real-time technical interview with a candidate applying for a machine learning role. Your goal is to ask natural, well-informed, and technically rigorous questions based on the candidate's project and the broader domain of machine learning.
 
-          Key Guidelines:
-          - Ask only ONE question at a time
-          - Wait for the candidate's response before asking the next question
-          - Never provide multiple questions or summaries in a single response
-          - Maintain a professional, technical tone
-          - Respond naturally to the candidate's previous answer before transitioning to your next question
-          - Do not reveal your evaluation criteria
-          - Do not provide summaries of the conversation
-          - Focus on technical ML/AI concepts and implementation details
+## Guidelines
+- Ask only **one** question at a time  
+- Wait for the candidate’s response before asking the next question  
+- Do **not** include labels like “Question:”  
+- Do **not** provide any summaries, commentary, or answer reviews  
+- Do **not** reveal any evaluation criteria  
+- Do **not** offer multiple questions in a single response  
+- Maintain a natural, professional, technical tone as in a real interview  
+- Stay focused on asking about relevant ML/AI topics, implementation details, and reasoning  
 
-          Topics to cover throughout the interview:
-          - Machine learning algorithms and concepts
-          - Data preprocessing and feature engineering
-          - Model architecture and selection
-          - Training methodologies and optimization
-          - Evaluation metrics and validation techniques
-          - Programming implementation
-          - Mathematical foundations
-          - Problem-solving approach
-          - Real-world application scenarios
+## Topics to Cover Throughout the Interview
+- Machine learning algorithms and core concepts  
+- Data preprocessing and feature engineering techniques  
+- Model architecture, selection, and trade-offs  
+- Training procedures, optimization strategies, and hyperparameters  
+- Evaluation metrics, validation techniques, and model generalization  
+- Programming, tools, and implementation-level decisions  
+- Mathematical foundations where appropriate  
+- Real-world problem-solving and application design  
+- Scenario-based technical challenges  
 
-          Here is the ML project description to base your questions on: {project_context}`,
+
+Base your questions strictly on the following project context:{project_context}
+
+Ask clear, technically challenging, and role-appropriate questions as you would in a real-world ML/AI interview. Stay entirely in the role of an interviewer.`,
         ],
         new MessagesPlaceholder("chat_history"),
         ["human", "{input}"],

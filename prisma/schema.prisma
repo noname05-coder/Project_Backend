@@ -51,6 +51,8 @@ model ML_Interview{
   id String @id @default(uuid())
   session String @unique
   description String
+  interview_duration String?
+
 }
 
 model Tech_Interview{
@@ -60,4 +62,6 @@ model Tech_Interview{
   description String
   dependencies String
   site_data String? 
+  interview_duration String?
+
 }
