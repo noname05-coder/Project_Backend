@@ -54,15 +54,24 @@ async function generate_summery(
     const prompt = ChatPromptTemplate.fromMessages([
       [
         "system",
-        `You are a HR. Based on the project description and interview chat history provided, please assess the candidate's performance in the interview. Your task is to evaluate the candidate's responses and provide a detailed performance report.generated in JSON format.
+        `You are a HR. Based on the description and interview chat history provided, assess the candidate's performance in the interview. 
+        Your task is to evaluate the candidate's responses and provide a performance report generated in JSON format.
         
-        The JSON should follow this structure (with percentages that reflect your assessment:
+        The JSON should follow this structure:
+        
           "Communication Skills": "X%",
           "Technical Knowledge": "X%",
           "Confidence & Attitude": "X%",
           "Teamwork & Collaboration": "X%",
           "Integrity & Professionalism": "X%",
           "Situational Judgement & Solving": "X%"
+          "strengths": ["strength 1", "strength 2", ...],
+          "areasToImprove": ["area 1", "area 2", ...]
+        
+        
+        Important:
+        - DO NOT provide any explanations for the scores - only include the percentage values
+        - Include at least 2-3 specific areas where the candidate could improve
           
         Here's the interview details: {interview_details}
         Here is the interview transcript: {transcript}`,
@@ -173,7 +182,7 @@ export function startHRInterviewWebSocket(sessionId: string, port: number): Prom
         - Respond naturally to the candidate's previous answer before transitioning to your next question
         - Do not reveal your evaluation criteria
         - Do not provide summaries of the conversation
-        - Stay focused on behavioral and situational questions
+        - Stay focused on behavioral and situational questions (like what are your strengths/weaknesses, how can you contribute..., why should we hire you..., if you were in a situation where....)
 
         Topics to cover throughout the interview:
         - Communication skills
@@ -183,7 +192,7 @@ export function startHRInterviewWebSocket(sessionId: string, port: number): Prom
         - Cultural fit
         - Leadership potential
         - Conflict resolution
-        - Career motivation
+        
         Here is the candidate context: {candidate_context}`,
     
       ],
@@ -304,38 +313,36 @@ export function startHRInterviewWebSocket(sessionId: string, port: number): Prom
           console.log("AI Interviewer is evaluating your response...");
           if (isEnding) {
             response = await chain.invoke({
-                input: userInput + " [Please wrap up the interview with a final thank you message, no more questions.]",
+                input: userInput + "\n [IMPORTANT: This is the final message. Provide ONLY a brief thank you (maximum 3 lines). Do NOT ask any questions. Do NOT continue the interview.]",
                 candidate_context: JSON.stringify(role_data),
             });
                 
             socket.send(`\nInterviewer: ${response.output}\n`);
+                        
+            const summary = await generate_summery(chatHistory, role_data);
+            socket.send("END");
+            socket.send(`\nInterview Summary: ${summary}\n`);
+            continueInterview = false;
+            clearTimeout(warningTimer);
+            clearTimeout(endTimer);
             
-            // Don't immediately end if we've just entered ending mode
-            if (Date.now() >= endTime) {
-              const summary = await generate_summery(chatHistory, role_data);
-              socket.send("END");
-              socket.send(`\nInterview Summary: ${summary}\n`);
-              continueInterview = false;
-              clearTimeout(warningTimer);
-              clearTimeout(endTimer);
-              
-              // Clean up session data
-              sessionData.delete(sessionId);
-              
-              // Close socket and server
-              socket.close();
-              
-              // Close and clean up the WebSocket server
-              const wss = activeServers.get(sessionId);
-              if (wss) {
-                wss.close(() => {
-                  console.log(`WebSocket server for session ${sessionId} closed due to interview completion`);
-                });
-                activeServers.delete(sessionId);
-              }
-              
-              return;
+            // Clean up session data
+            sessionData.delete(sessionId);
+            
+            // Close socket and server
+            socket.close();
+            
+            // Close and clean up the WebSocket server
+            const wss = activeServers.get(sessionId);
+            if (wss) {
+              wss.close(() => {
+                console.log(`WebSocket server for session ${sessionId} closed due to interview completion`);
+              });
+              activeServers.delete(sessionId);
             }
+            
+            return;
+            
           } else {
             response = await chain.invoke({
                 input: userInput,
