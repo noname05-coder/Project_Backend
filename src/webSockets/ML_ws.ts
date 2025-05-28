@@ -9,6 +9,9 @@ import { ChatPerplexity } from "@langchain/community/chat_models/perplexity";
 dotenv.config();
 const prisma = new PrismaClient();
 
+// Get the backend URL from environment variables or default to localhost
+const BACKEND_URL = process.env.BACKEND_URL || 'localhost';
+
 const llm = new ChatPerplexity({
   model: "sonar",
   temperature: 0.7,
@@ -96,7 +99,7 @@ export function startMLInterviewWebSocket(sessionId: string, port: number): Prom
   return new Promise((resolve, reject) => {
     // Check if server already exists for this session
     if (activeServers.has(sessionId)) {
-      resolve(`ws://localhost:${port}?sessionId=${sessionId}`);
+      resolve(`ws://${BACKEND_URL}:${port}?sessionId=${sessionId}`);
       return;
     }
 
@@ -407,7 +410,7 @@ Ask clear, technically challenging, and role-appropriate questions as you would 
 
     wss.on('listening', () => {
       console.log(`ML Interview WebSocket server started for session ${sessionId} on port ${port}`);
-      resolve(`ws://localhost:${port}?sessionId=${sessionId}`);
+      resolve(`ws://${BACKEND_URL}:${port}?sessionId=${sessionId}`);
     });
 
     wss.on('error', (error) => {

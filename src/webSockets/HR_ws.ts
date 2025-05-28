@@ -7,6 +7,9 @@ import { PrismaClient } from "@prisma/client";
 import { ChatPerplexity } from "@langchain/community/chat_models/perplexity";
 dotenv.config();
 
+// Add this at the top with your other constants
+const BACKEND_URL = process.env.BACKEND_URL || 'ws://localhost';
+
 const prisma = new PrismaClient();
 
 const llm = new ChatPerplexity({
@@ -103,7 +106,8 @@ export function startHRInterviewWebSocket(sessionId: string, port: number): Prom
   return new Promise((resolve, reject) => {
     // Check if server already exists for this session
     if (activeServers.has(sessionId)) {
-      resolve(`ws://localhost:${port}?sessionId=${sessionId}`);
+      const wsUrl = `${BACKEND_URL}:${port}?sessionId=${sessionId}`;
+      resolve(wsUrl);
       return;
     }
 
@@ -407,7 +411,8 @@ export function startHRInterviewWebSocket(sessionId: string, port: number): Prom
 
     wss.on('listening', () => {
       console.log(`HR Interview WebSocket server started for session ${sessionId} on port ${port}`);
-      resolve(`ws://localhost:${port}?sessionId=${sessionId}`);
+      const wsUrl = `${BACKEND_URL}:${port}?sessionId=${sessionId}`;
+      resolve(wsUrl);
     });
 
     wss.on('error', (error) => {

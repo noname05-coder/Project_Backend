@@ -10,6 +10,9 @@ import dotenv from "dotenv";
 import { ChatPerplexity } from "@langchain/community/chat_models/perplexity";
 dotenv.config();
 
+// Get backend URL from environment variable, or fallback to localhost
+const BACKEND_URL = process.env.BACKEND_URL || 'localhost';
+
 const prisma = new PrismaClient();
 
 const llm = new ChatPerplexity({
@@ -110,7 +113,7 @@ export function startTechInterviewWebSocket(
   return new Promise((resolve, reject) => {
     // Check if server already exists for this session
     if (activeServers.has(sessionId)) {
-      resolve(`ws://localhost:${port}?sessionId=${sessionId}`);
+      resolve(`ws://${BACKEND_URL}:${port}?sessionId=${sessionId}`);
       return;
     }
 
@@ -119,7 +122,7 @@ export function startTechInterviewWebSocket(
 
     wss.on("connection", async function (socket, req) {
       // Parse sessionId from query string
-      const url = new URL(req.url || "", "http://localhost");
+      const url = new URL(req.url || "", `http://${BACKEND_URL}`);
       const requestSessionId = url.searchParams.get("sessionId");
 
       // Validate that the connection is for the correct session
@@ -485,7 +488,7 @@ Use this context to guide your questions. Ask in a natural and realistic intervi
       console.log(
         `Tech Interview WebSocket server started for session ${sessionId} on port ${port}`
       );
-      resolve(`ws://localhost:${port}?sessionId=${sessionId}`);
+      resolve(`ws://${BACKEND_URL}:${port}?sessionId=${sessionId}`);
     });
 
     wss.on("error", (error) => {
