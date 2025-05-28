@@ -52,7 +52,6 @@ async function generate_summery(
         `You are an ML/AI Technical Interviewer. Based on the project description and interview chat history provided, please assess the candidate's performance in the ML/AI technical interview. Your task is to evaluate the candidate's responses and provide a detailed performance report in JSON format.
         
         The JSON should follow this structure (with percentages that reflect your assessment):
-        {
           "Machine Learning Concepts": "X%",
           "Data Preprocessing & Feature Engineering": "X%",
           "Model Selection & Architecture": "X%",
@@ -61,14 +60,12 @@ async function generate_summery(
           "Problem-Solving Approach": "X%",
           "Mathematical Foundation": "X%",
           "Communication of Technical Concepts": "X%"
-        }
-        dont include any explaination , just the JSON object.
+          "strengths": ["strength 1", "strength 2", ...],
+          "areasToImprove": ["area 1", "area 2", ...]
         
-        in json format give me some feedback on the candidate's performance, including strengths and areas for improvement.
-        {
-          "strength:[] (sting of strength here),
-          "areas_for_improvement:[] (string of areas for improvement here)"
-        }
+        Important:
+        - DO NOT provide any explanations for the scores - only include the percentage values
+        - Include at minimum 2-3 and atmaximum 6-7 specific areas where the candidate could improve
 
           
         Here's the ML project description: {project_details}
