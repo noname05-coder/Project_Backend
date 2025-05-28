@@ -271,7 +271,21 @@ Ask clear, technically challenging, and role-appropriate questions as you would 
           socket.send("END");
           socket.send(`\nML Interview Summary: ${summary}\n`);
           continueInterview = false;
+          
+          // Clean up session data
+          sessionData.delete(sessionId);
+          
+          // Close socket
           socket.close();
+          
+          // Close and clean up the WebSocket server
+          const wss = activeServers.get(sessionId);
+          if (wss) {
+            wss.close(() => {
+              console.log(`WebSocket server for session ${sessionId} closed due to timeout`);
+            });
+            activeServers.delete(sessionId);
+          }
         }, endTime - startTime);
 
         while (continueInterview) {
@@ -323,7 +337,21 @@ Ask clear, technically challenging, and role-appropriate questions as you would 
                 continueInterview = false;
                 clearTimeout(warningTimer);
                 clearTimeout(endTimer);
+                
+                // Clean up session data
+                sessionData.delete(sessionId);
+                
+                // Close socket
                 socket.close();
+                
+                // Close and clean up the WebSocket server
+                const wss = activeServers.get(sessionId);
+                if (wss) {
+                  wss.close(() => {
+                    console.log(`WebSocket server for session ${sessionId} closed due to ending interview`);
+                  });
+                  activeServers.delete(sessionId);
+                }
                 return;
               }
             } else {
